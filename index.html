@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClipFinder | Encuentra los mejores momentos de tus vídeos</title>
+  <meta name="description" content="ClipFinder analiza tus vídeos, detecta los mejores momentos y los convierte en clips cortos listos para previsualizar y descargar.">
+  <meta name="theme-color" content="#0D0F1C">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%236A5CF5'/%3E%3Crect x='7' y='12' width='3' height='8' rx='1.5' fill='white'/%3E%3Crect x='12.5' y='8' width='3' height='16' rx='1.5' fill='%23FFC24B'/%3E%3Crect x='18' y='10' width='3' height='12' rx='1.5' fill='%23FFC24B'/%3E%3Crect x='23.5' y='13' width='3' height='6' rx='1.5' fill='white'/%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#analizar">Saltar al contenido</a>
+
+  <!-- ============ CABECERA ============ -->
+  <header class="site-header">
+    <div class="container header__inner">
+      <a class="brand" href="#top" aria-label="ClipFinder, ir al inicio">
+        <svg class="brand__mark" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+          <rect width="32" height="32" rx="9" fill="#6A5CF5"/>
+          <rect x="7" y="12" width="3" height="8" rx="1.5" fill="#fff"/>
+          <rect x="12.5" y="8" width="3" height="16" rx="1.5" fill="#FFC24B"/>
+          <rect x="18" y="10" width="3" height="12" rx="1.5" fill="#FFC24B"/>
+          <rect x="23.5" y="13" width="3" height="6" rx="1.5" fill="#fff"/>
+        </svg>
+        <span>ClipFinder</span>
+      </a>
+      <nav class="nav" aria-label="Principal">
+        <a href="#como-funciona">Cómo funciona</a>
+        <a href="#uso-responsable">Uso responsable</a>
+      </nav>
+      <a class="btn btn--primary btn--sm" id="headerCta" href="#analizar">Probar ahora</a>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- ============ HERO ============ -->
+    <section class="hero">
+      <div class="container">
+        <h1>Encuentra los mejores momentos de tus vídeos</h1>
+        <p class="hero__lead">
+          ClipFinder revisa tu vídeo, localiza los fragmentos más interesantes y te los deja listos
+          como clips cortos. Sin saber editar y sin perder horas buscando.
+        </p>
+
+        <figure class="hero__figure">
+          <div class="wavebox" id="heroWaveBox">
+            <div class="wave" id="heroWave" aria-hidden="true"></div>
+          </div>
+          <figcaption class="hero__caption">
+            Las barras doradas son los fragmentos que ClipFinder propone como clips, con su puntuación de relevancia.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============ ENTRADA Y ANÁLISIS ============ -->
+    <section class="panel-section" id="analizar">
+      <div class="container container--narrow">
+
+        <!-- Formulario de entrada -->
+        <form class="card input-card" id="inputCard" novalidate>
+          <div class="tabs" role="tablist" aria-label="Origen del vídeo">
+            <button class="tab" type="button" role="tab" id="tab-url" data-tab="url"
+                    aria-selected="true" aria-controls="panel-url">Pegar enlace</button>
+            <button class="tab" type="button" role="tab" id="tab-file" data-tab="file"
+                    aria-selected="false" aria-controls="panel-file" tabindex="-1">Subir archivo</button>
+          </div>
+
+          <div role="tabpanel" id="panel-url" aria-labelledby="tab-url">
+            <label class="field__label" for="videoUrl">URL del vídeo</label>
+            <input class="field__input" type="url" id="videoUrl" inputmode="url" autocomplete="off"
+                   placeholder="https://tu-web.com/mi-video.mp4">
+            <p class="field__hint">Pega el enlace de un vídeo tuyo o para el que tengas autorización.</p>
+          </div>
+
+          <div role="tabpanel" id="panel-file" aria-labelledby="tab-file" hidden>
+            <div class="dropzone" id="dropzone">
+              <input class="sr-only" type="file" id="fileInput" accept="video/*">
+              <label class="dropzone__label" for="fileInput">
+                <span class="dropzone__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+                  </svg>
+                </span>
+                <span class="dropzone__title">Arrastra tu vídeo aquí</span>
+                <span class="dropzone__hint">o haz clic para elegir un archivo (MP4, MOV o WebM)</span>
+              </label>
+            </div>
+
+            <div class="file-chip" id="fileChip" hidden>
+              <span class="file-chip__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>
+              </span>
+              <span class="file-chip__text">
+                <span class="file-chip__name" id="fileName"></span>
+                <span class="file-chip__meta" id="fileMeta"></span>
+              </span>
+              <button class="icon-btn" type="button" id="fileRemove" aria-label="Quitar el vídeo seleccionado">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <label class="consent" id="consent">
+            <input type="checkbox" id="rightsCheck">
+            <span>Confirmo que este vídeo es mío o que tengo los derechos o la autorización necesaria para usarlo.</span>
+          </label>
+
+          <p class="form-error" id="formError" role="alert" hidden></p>
+
+          <button class="btn btn--primary btn--lg btn--block" type="submit" id="analyzeBtn">Analizar vídeo</button>
+
+          <p class="fineprint">
+            Esta primera versión es una demostración: los clips que verás son datos de ejemplo.
+            Tu archivo no sale de tu navegador.
+          </p>
+        </form>
+
+        <!-- Panel de análisis -->
+        <div class="card analysis" id="analysisCard" hidden>
+          <div class="analysis__head">
+            <div class="analysis__titles">
+              <h2 class="analysis__title">Analizando tu vídeo</h2>
+              <p class="analysis__source" id="analysisSource"></p>
+            </div>
+            <button class="btn btn--ghost btn--sm" type="button" id="cancelBtn">Cancelar</button>
+          </div>
+
+          <div class="wave wave--analysis" id="analysisWave" aria-hidden="true"></div>
+
+          <div class="progress" id="progressBar" role="progressbar" aria-label="Progreso del análisis"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="progress__fill" id="progressFill"></div>
+          </div>
+
+          <div class="analysis__row">
+            <p class="analysis__status" id="statusText" aria-live="polite">Preparando el vídeo…</p>
+            <p class="analysis__percent" id="percentText">0%</p>
+          </div>
+
+          <dl class="stats">
+            <div class="stat">
+              <dt>Duración del vídeo</dt>
+              <dd id="statDuration">00:00:00</dd>
+            </div>
+            <div class="stat">
+              <dt>Momentos encontrados</dt>
+              <dd id="statFound">0</dd>
+            </div>
+            <div class="stat">
+              <dt>Tiempo restante</dt>
+              <dd id="statEta">~8 s</dd>
+            </div>
+          </dl>
+
+          <ol class="stages" id="stages" aria-label="Fases del análisis"></ol>
+
+          <p class="analysis__note" id="analysisNote" hidden>
+            En esta demostración no descargamos el vídeo del enlace: usamos una duración de ejemplo.
+          </p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ RESULTADOS ============ -->
+    <section class="results" id="results" aria-labelledby="resultsTitle" hidden>
+      <div class="container">
+        <div class="results__head">
+          <div>
+            <h2 id="resultsTitle">Tus mejores momentos</h2>
+            <p class="results__meta" id="resultsMeta"></p>
+          </div>
+          <button class="btn btn--ghost" type="button" id="newBtn">Analizar otro vídeo</button>
+        </div>
+
+        <p class="notice" role="note">
+          <strong>Resultados de ejemplo.</strong>
+          Los momentos, títulos y puntuaciones son datos de demostración. La detección real se conectará cuando exista el servidor de análisis.
+        </p>
+
+        <div class="card overview">
+          <p class="overview__label">Mapa del vídeo</p>
+          <div class="overview__track" id="overviewTrack"></div>
+          <div class="overview__scale" aria-hidden="true">
+            <span>00:00:00</span>
+            <span id="overviewEnd">00:00:00</span>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="chips" id="filterChips" role="group" aria-label="Filtrar por duración">
+            <button class="chip" type="button" data-filter="all" aria-pressed="true">Todos <span class="chip__count"></span></button>
+            <button class="chip" type="button" data-filter="15-30" aria-pressed="false">15–30 s <span class="chip__count"></span></button>
+            <button class="chip" type="button" data-filter="30-60" aria-pressed="false">30–60 s <span class="chip__count"></span></button>
+            <button class="chip" type="button" data-filter="60-90" aria-pressed="false">60–90 s <span class="chip__count"></span></button>
+          </div>
+          <div class="sort">
+            <label for="sortSelect">Ordenar por</label>
+            <select id="sortSelect">
+              <option value="score">Puntuación</option>
+              <option value="duration">Duración</option>
+              <option value="time">Orden cronológico</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="results__count" id="resultsCount" aria-live="polite"></p>
+
+        <div class="clip-list" id="clipList"></div>
+
+        <div class="empty" id="emptyState" hidden>
+          <p class="empty__title">No hay clips en este rango de duración</p>
+          <p class="empty__text">Prueba con otro filtro para ver más momentos.</p>
+          <button class="btn btn--ghost" type="button" id="showAllBtn">Ver todos los clips</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CÓMO FUNCIONA ============ -->
+    <section class="section" id="como-funciona" aria-labelledby="howTitle">
+      <div class="container">
+        <div class="section__head">
+          <h2 id="howTitle">¿Cómo funciona?</h2>
+          <p>Cuatro pasos, sin conocimientos de edición.</p>
+        </div>
+
+        <ol class="steps">
+          <li class="step">
+            <span class="step__num" aria-hidden="true">1</span>
+            <p class="step__label">Paso 1</p>
+            <h3>Añade tu vídeo</h3>
+            <p>Pega el enlace de un vídeo que puedas usar o sube el archivo desde tu dispositivo.</p>
+          </li>
+          <li class="step">
+            <span class="step__num" aria-hidden="true">2</span>
+            <p class="step__label">Paso 2</p>
+            <h3>Analizamos el contenido</h3>
+            <p>Revisamos el audio, el ritmo y los cambios de energía a lo largo de todo el vídeo.</p>
+          </li>
+          <li class="step">
+            <span class="step__num" aria-hidden="true">3</span>
+            <p class="step__label">Paso 3</p>
+            <h3>Detectamos los mejores momentos</h3>
+            <p>Te proponemos los fragmentos más interesantes, cada uno con título, motivo y puntuación.</p>
+          </li>
+          <li class="step">
+            <span class="step__num" aria-hidden="true">4</span>
+            <p class="step__label">Paso 4</p>
+            <h3>Previsualiza y descarga tus clips</h3>
+            <p>Míralos, filtra por duración y descarga solo los que quieras publicar.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ USO RESPONSABLE ============ -->
+    <section class="section section--raised" id="uso-responsable" aria-labelledby="rightsTitle">
+      <div class="container">
+        <div class="section__head">
+          <h2 id="rightsTitle">Usa ClipFinder solo con vídeos que puedas utilizar</h2>
+          <p>
+            ClipFinder está pensado para creadores que trabajan con sus propios vídeos o con vídeos sobre los que
+            tienen los derechos o la autorización necesaria. Eres responsable de comprobar que puedes usar cada vídeo
+            que analices, recortes o publiques.
+          </p>
+        </div>
+
+        <div class="rights">
+          <div class="rights__card rights__card--yes">
+            <h3>Puedes usarlo con</h3>
+            <ul>
+              <li>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                Tus propios vídeos, streams y grabaciones.
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                Vídeos de clientes, marcas o equipos que te han dado permiso.
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                Contenido con una licencia que permite recortarlo y reutilizarlo.
+              </li>
+            </ul>
+          </div>
+          <div class="rights__card rights__card--no">
+            <h3>No lo uses con</h3>
+            <ul>
+              <li>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                Vídeos de otros creadores sin su permiso.
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                Películas, series, música o retransmisiones protegidas.
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                Cualquier contenido cuyos derechos no controles.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ PIE ============ -->
+  <footer class="site-footer">
+    <div class="container footer__inner">
+      <p class="footer__brand">ClipFinder</p>
+      <p class="footer__text">
+        Versión de demostración. Úsalo únicamente con vídeos propios o con autorización.
+        © <span id="year">2026</span>
+      </p>
+    </div>
+  </footer>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+</body>
+</html>
