@@ -143,3 +143,7 @@ footer{border-top:1px solid var(--line);padding:24px 5vw;display:flex;justify-co
 .length-option input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
 .length-picker:disabled{opacity:.55;pointer-events:none}
 @media(max-width:720px){.length-picker{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.format-picker{grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 20px}
+.button.is-busy{pointer-events:none;opacity:.75}
+@media(max-width:720px){.format-picker{grid-template-columns:1fr}}

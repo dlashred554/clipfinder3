@@ -91,6 +91,22 @@
         </div>
         <span class="step">02</span>
       </div>
+      <fieldset class="length-picker format-picker" id="formatPicker">
+        <legend>Formato al descargar</legend>
+        <label class="length-option">
+          <input type="radio" name="downloadFormat" value="original" checked>
+          <span><b>Original</b><small>Como tu vídeo · máx. 720p</small></span>
+        </label>
+        <label class="length-option">
+          <input type="radio" name="downloadFormat" value="9x16">
+          <span><b>9:16</b><small>Vertical · fondo desenfocado</small></span>
+        </label>
+        <label class="length-option">
+          <input type="radio" name="downloadFormat" value="16x9">
+          <span><b>16:9</b><small>Horizontal · fondo desenfocado</small></span>
+        </label>
+      </fieldset>
+
       <div id="results" class="results-grid"></div>
     </section>
 

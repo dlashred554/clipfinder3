@@ -13,7 +13,6 @@ const resultsSection = document.getElementById("resultsSection");
 const results = document.getElementById("results");
 const resultsSummary = document.getElementById("resultsSummary");
 const notice = document.getElementById("notice");
-const lengthPicker = document.getElementById("lengthPicker");
 
 let selectedFile = null;
 let videoDuration = 0;
@@ -22,7 +21,38 @@ let ffmpeg = null;
 let fetchFile = null;
 let toBlobURL = null;
 let ffmpegReady = false;
-let currentClip = {index:0,total:0};
+let currentJob = {kind:"none"};   // trabajo de FFmpeg en curso (para la barra de progreso)
+let ffmpegQueue = Promise.resolve();
+let videoWidth = 0;
+let videoHeight = 0;
+let enginePromise = null;         // carga del motor (una sola vez)
+let inputPromise = null;          // vídeo original ya escrito en la memoria de FFmpeg
+let inputName = null;
+let outputToken = 0;              // cambia al generar de nuevo o al subir otro vídeo
+const outputCache = new Map();    // "clip-formato" -> URL del MP4 ya convertido
+let previewStop = null;
+
+// Altura máxima de los clips en modo "Original". Bájala (p. ej. 540) para ir más rápido.
+const MAX_HEIGHT = 720;
+
+// Todas las operaciones de FFmpeg pasan por una cola: así nunca se mezclan
+// la generación de clips y las conversiones de formato al descargar.
+function enqueue(fn){
+  const run = ffmpegQueue.then(fn);
+  ffmpegQueue = run.catch(() => {});
+  return run;
+}
+
+const FORMATS = {
+  "original": {label:"Original"},
+  "9x16": {w:720,  h:1280, label:"9:16"},
+  "16x9": {w:1280, h:720,  label:"16:9"}
+};
+
+function getDownloadFormat(){
+  const checked = document.querySelector('input[name="downloadFormat"]:checked');
+  return checked && FORMATS[checked.value] ? checked.value : "original";
+}
 
 function formatTime(seconds){
   seconds = Math.max(0, Number(seconds) || 0);
@@ -62,6 +92,10 @@ function setVideoFile(file){
 
   selectedFile = file;
   videoDuration = 0;
+  videoWidth = 0;
+  videoHeight = 0;
+  resetInput();
+  clearOutputs();
   generateBtn.disabled = true;
   resultsSection.classList.add("hidden");
   results.innerHTML = "";
@@ -72,6 +106,8 @@ function setVideoFile(file){
     const duration = Number(sourceVideo.duration);
     if (Number.isFinite(duration) && duration > 0) {
       videoDuration = duration;
+      videoWidth = sourceVideo.videoWidth;
+      videoHeight = sourceVideo.videoHeight;
       fileInfo.innerHTML = `<b>${escapeHtml(file.name)}</b><span>${formatSize(file.size)} · ${formatTime(videoDuration)}</span>`;
       generateBtn.disabled = false;
     } else {
@@ -84,6 +120,8 @@ function setVideoFile(file){
     const duration = Number(sourceVideo.duration);
     if (!videoDuration && Number.isFinite(duration) && duration > 0) {
       videoDuration = duration;
+      videoWidth = sourceVideo.videoWidth;
+      videoHeight = sourceVideo.videoHeight;
       fileInfo.innerHTML = `<b>${escapeHtml(file.name)}</b><span>${formatSize(file.size)} · ${formatTime(videoDuration)}</span>`;
       generateBtn.disabled = false;
     }
@@ -173,6 +211,8 @@ function addFfmpegLog(message){
   log.textContent = (log.textContent + message + "\n").slice(-6000);
 }
 
+/* ---------- Motor FFmpeg ---------- */
+
 async function loadFFmpeg(){
   if(ffmpegReady) return;
   setProgress(3,"Preparando el motor de vídeo…","Descargando el motor MP4. Solo ocurre la primera vez.");
@@ -186,20 +226,19 @@ async function loadFFmpeg(){
 
   ffmpeg.on("log", ({message}) => {
     console.log("[ClipFinder FFmpeg]", message);
-    addFfmpegLog(message);
+    if(/error|invalid|failed|unable|unknown|no such|not supported/i.test(message)) addFfmpegLog(message);
   });
 
-  // Progreso real del clip que se está convirtiendo (0..1)
-  ffmpeg.on("progress", ({progress}) => {
-    if(!Number.isFinite(progress) || currentClip.total === 0) return;
-    const p = Math.max(0, Math.min(1, progress));
-    const base = 8 + ((currentClip.index-1)/currentClip.total)*88;
-    const span = 88/currentClip.total;
-    setProgress(
-      base + p*span,
-      `Generando clip ${currentClip.index} de ${currentClip.total}…`,
-      `${Math.round(p*100)}% de este clip · convirtiendo a MP4`
-    );
+  // Progreso real del clip que se está convirtiendo (0..1).
+  // "time" son microsegundos ya codificados; se compara con la duración del clip
+  // (el "progress" de la librería se calcula sobre el vídeo entero y no sirve aquí).
+  ffmpeg.on("progress", ({progress,time}) => {
+    if(currentJob.kind !== "export") return;
+    let p = Number.isFinite(time) && time > 0 && currentJob.duration
+      ? (time / 1e6) / currentJob.duration
+      : progress;
+    if(!Number.isFinite(p)) return;
+    currentJob.onProgress(Math.max(0, Math.min(1, p)));
   });
 
   const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
@@ -222,114 +261,248 @@ async function loadFFmpeg(){
   ffmpegReady = true;
 }
 
-async function writeInput(){
-  const extension = getInputExtension(selectedFile);
-  const inputName = `input.${extension}`;
-  await ffmpeg.writeFile(inputName, await fetchFile(selectedFile));
-  return inputName;
+function ensureEngine(){
+  if(!enginePromise){
+    enginePromise = loadFFmpeg().catch(err => {
+      enginePromise = null;
+      try{ ffmpeg && ffmpeg.terminate(); }catch(_){}
+      ffmpeg = null;
+      throw err;
+    });
+  }
+  return enginePromise;
 }
 
-async function exportOneClip(inputName,start,end,index,total){
-  const outputName = `clip_${String(index).padStart(2,"0")}.mp4`;
-  const duration = Math.max(1,end-start);
+// Copia el vídeo original a la memoria de FFmpeg (una sola vez por vídeo).
+function ensureInput(){
+  if(!inputPromise){
+    const file = selectedFile;
+    inputPromise = (async () => {
+      await ensureEngine();
+      setProgress(6,"Preparando el vídeo…","Cargando el vídeo en el motor. Solo ocurre una vez.");
+      const name = `input.${getInputExtension(file)}`;
+      await ffmpeg.writeFile(name, await fetchFile(file));
+      inputName = name;
+      return name;
+    })().catch(err => { inputPromise = null; throw err; });
+  }
+  return inputPromise;
+}
 
-  setProgress(
-    8 + ((index-1)/total)*88,
-    `Generando clip ${index} de ${total}…`,
-    `${formatTime(start)} → ${formatTime(end)} · convirtiendo a MP4`
-  );
+function resetInput(){
+  if(ffmpegReady && inputName){
+    const old = inputName;
+    ffmpeg.deleteFile(old).catch(()=>{});
+  }
+  inputPromise = null;
+  inputName = null;
+}
 
-  currentClip = {index,total};
+function clearOutputs(){
+  outputToken++;
+  for(const url of outputCache.values()) URL.revokeObjectURL(url);
+  outputCache.clear();
+  if(previewStop){
+    sourceVideo.removeEventListener("timeupdate", previewStop);
+    previewStop = null;
+  }
+}
 
-  const code = await ffmpeg.exec([
-    "-ss", String(start),
-    "-i", inputName,
+// Deja el motor y el vídeo listos en segundo plano mientras miras los clips.
+function warmUp(){
+  ensureInput().then(() => {
+    setProgress(100,"Motor listo","Elige el formato y pulsa Descargar en el clip que quieras.");
+  }).catch(error => {
+    console.error(error);
+    showNotice("No se ha podido preparar el conversor MP4. Detalle: " + (error?.message || error) + " · Se reintentará al pulsar Descargar.","error");
+    setProgress(0,"Error al preparar el motor","El detalle técnico aparece debajo si FFmpeg ha devuelto información.");
+  });
+}
+
+/* ---------- Exportación de un clip ---------- */
+
+function buildExportArgs(fmt, start, duration, input, output){
+  let filter;
+  if(fmt === "original"){
+    // Mismo encuadre que el vídeo, limitado a MAX_HEIGHT para que sea rápido.
+    filter = `[0:v]scale=-2:'min(${MAX_HEIGHT},ih)',setsar=1,format=yuv420p[v]`;
+  }else{
+    const {w:W,h:H} = FORMATS[fmt];
+    const srcAspect = videoWidth && videoHeight ? videoWidth/videoHeight : 16/9;
+    if(Math.abs(srcAspect/(W/H) - 1) < 0.02){
+      // Ya tiene ese formato: no hace falta fondo.
+      filter = `[0:v]scale=${W}:${H},setsar=1,format=yuv420p[v]`;
+    }else{
+      // Fondo: el propio clip reducido, muy desenfocado y ampliado (barato de calcular).
+      // Encima: el clip completo, centrado y sin recortar.
+      const bw = Math.round(W/8), bh = Math.round(H/8);
+      filter =
+        `[0:v]split=2[bgsrc][fgsrc];` +
+        `[bgsrc]scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},boxblur=3:2,scale=${W}:${H},setsar=1[bg];` +
+        `[fgsrc]scale=${W}:${H}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[fg];` +
+        `[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`;
+    }
+  }
+
+  return [
+    "-ss", String(start),          // antes de -i: salto rápido y, al recodificar, exacto
+    "-i", input,
     "-t", String(duration),
-    "-map", "0:v:0",
+    "-filter_complex", filter,
+    "-map", "[v]",
     "-map", "0:a?",
-    "-vf", "scale=-2:'min(720,ih)'",
     "-c:v", "libx264",
     "-preset", "ultrafast",
-    "-crf", "26",
-    "-pix_fmt", "yuv420p",
+    "-crf", "24",
     "-c:a", "aac",
     "-b:a", "128k",
     "-movflags", "+faststart",
     "-y",
-    outputName
-  ]);
-  if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
-
-  const data = await ffmpeg.readFile(outputName);
-  const blob = new Blob([data.buffer], {type:"video/mp4"});
-  await ffmpeg.deleteFile(outputName);
-  return URL.createObjectURL(blob);
+    output
+  ];
 }
 
-async function generateClips(){
+function cancelledError(){
+  const e = new Error("cancelado");
+  e.cancelled = true;
+  return e;
+}
+
+// Convierte UN clip, directamente desde el vídeo original (una sola codificación).
+function renderClip(index, segment, fmt, onProgress){
+  const key = `${index}-${fmt}`;
+  if(outputCache.has(key)) return Promise.resolve(outputCache.get(key));
+
+  const token = outputToken;
+  return enqueue(async () => {
+    if(token !== outputToken) throw cancelledError();
+    if(outputCache.has(key)) return outputCache.get(key);
+
+    const input = await ensureInput();
+    const output = `out_${index}_${fmt}.mp4`;
+    const duration = Math.max(1, segment.end - segment.start);
+
+    currentJob = {kind:"export", duration, onProgress};
+    try{
+      onProgress(0);
+      const code = await ffmpeg.exec(buildExportArgs(fmt, segment.start, duration, input, output));
+      if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
+      const data = await ffmpeg.readFile(output);
+      await ffmpeg.deleteFile(output);
+      const url = URL.createObjectURL(new Blob([data], {type:"video/mp4"}));
+      if(token !== outputToken){ URL.revokeObjectURL(url); throw cancelledError(); }
+      outputCache.set(key, url);
+      return url;
+    }finally{
+      currentJob = {kind:"none"};
+    }
+  });
+}
+
+function triggerDownload(url, filename){
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/* ---------- Interfaz ---------- */
+
+function generateClips(){
   if(!selectedFile || !videoDuration) return;
 
-  generateBtn.disabled = true;
-  lengthPicker.disabled = true;
-  results.innerHTML = "";
-  resultsSection.classList.add("hidden");
   clearNotice();
+  clearOutputs();
+  results.innerHTML = "";
 
   const log = document.getElementById("ffmpegLog");
   if(log){ log.textContent=""; log.classList.add("hidden"); }
 
-  try{
-    const segments = buildSegments(videoDuration, getSelectedLength());
-    if(!segments.length) throw new Error("No se pudieron crear fragmentos.");
-
-    await loadFFmpeg();
-    const inputName = await writeInput();
-
-    resultsSection.classList.remove("hidden");
-    resultsSummary.textContent = `Generando ${segments.length} clips MP4 automáticamente…`;
-
-    for(let i=0;i<segments.length;i++){
-      const url = await exportOneClip(inputName,segments[i].start,segments[i].end,i+1,segments.length);
-      addClipCard(i+1,segments[i],url);
-      resultsSummary.textContent = `${i+1} de ${segments.length} clips listos.`;
-    }
-
-    try{ await ffmpeg.deleteFile(inputName); }catch(_){}
-
-    setProgress(100,"Proceso terminado","Todos los clips están listos para descargar.");
-    resultsSummary.textContent = `${segments.length} clips MP4 listos.`;
-    showNotice("Listo. Los clips se han generado como MP4 independientes.","ok");
-  }catch(error){
-    console.error(error);
-    const detail = error?.message ? ` Detalle: ${error.message}` : "";
-    showNotice("Ha fallado el conversor MP4."+detail,"error");
-    setProgress(0,"Error al generar el MP4","El detalle técnico aparece debajo si FFmpeg ha devuelto información.");
-  }finally{
-    generateBtn.disabled = false;
-    lengthPicker.disabled = false;
+  const segments = buildSegments(videoDuration, getSelectedLength());
+  if(!segments.length){
+    showNotice("No se pudieron crear fragmentos.","error");
+    resultsSection.classList.add("hidden");
+    return;
   }
+
+  // Los clips son solo tramos del vídeo: aparecen al instante.
+  // El MP4 se crea al pulsar "Descargar", ya en el formato elegido.
+  segments.forEach((seg,i) => addClipCard(i+1, seg));
+  resultsSection.classList.remove("hidden");
+  resultsSummary.textContent = `${segments.length} clips listos. Elige el formato y pulsa Descargar.`;
+  showNotice("Listo. Previsualiza los clips y descarga los que quieras; el MP4 se genera al descargar.","ok");
+  resultsSection.scrollIntoView({behavior:"smooth", block:"start"});
+
+  warmUp();
 }
 
-function addClipCard(index,segment,url){
+function previewSegment(segment){
+  sourceVideo.classList.remove("hidden");
+  if(previewStop) sourceVideo.removeEventListener("timeupdate", previewStop);
+
+  previewStop = () => {
+    if(sourceVideo.currentTime >= segment.end){
+      sourceVideo.pause();
+      sourceVideo.removeEventListener("timeupdate", previewStop);
+      previewStop = null;
+    }
+  };
+  sourceVideo.addEventListener("timeupdate", previewStop);
+
+  sourceVideo.currentTime = segment.start;
+  sourceVideo.play().catch(()=>{});
+  sourceVideo.scrollIntoView({behavior:"smooth", block:"center"});
+}
+
+function addClipCard(index,segment){
+  const nn = String(index).padStart(2,"0");
+  const seconds = Math.round(segment.end - segment.start);
   const card = document.createElement("article");
   card.className = "clip-card";
   card.innerHTML = `
-    <div class="clip-number">CLIP ${String(index).padStart(2,"0")}</div>
+    <div class="clip-number">CLIP ${nn}</div>
     <h3>Fragmento ${index}</h3>
-    <div class="clip-meta">${formatTime(segment.start)} — ${formatTime(segment.end)} · MP4</div>
+    <div class="clip-meta">${formatTime(segment.start)} — ${formatTime(segment.end)} · ${seconds} s · MP4</div>
     <div class="clip-actions">
       <button class="button button-secondary preview">Previsualizar</button>
-      <a class="button button-primary download" download="clip-${String(index).padStart(2,"0")}.mp4">Descargar MP4</a>
+      <button class="button button-primary download">Descargar MP4</button>
     </div>
   `;
-  card.querySelector(".preview").addEventListener("click",()=>{
-    sourceVideo.src = url;
-    sourceVideo.currentTime = 0;
-    sourceVideo.classList.remove("hidden");
-    sourceVideo.play().catch(()=>{});
+
+  card.querySelector(".preview").addEventListener("click", () => previewSegment(segment));
+
+  const dl = card.querySelector(".download");
+  const label = dl.textContent;
+
+  dl.addEventListener("click", async () => {
+    if(dl.classList.contains("is-busy")) return;
+
+    const fmt = getDownloadFormat();
+    const fmtLabel = FORMATS[fmt].label;
+    dl.classList.add("is-busy");
+    dl.textContent = outputCache.has(`${index}-${fmt}`) ? "Descargando…" : "En cola…";
+
+    try{
+      const url = await renderClip(index, segment, fmt, p => {
+        dl.textContent = `Convirtiendo ${fmtLabel}… ${Math.round(p*100)}%`;
+        setProgress(p*100, `Generando clip ${index} (${fmtLabel})…`, `${formatTime(segment.start)} → ${formatTime(segment.end)}`);
+      });
+      triggerDownload(url, fmt === "original" ? `clip-${nn}.mp4` : `clip-${nn}-${fmt}.mp4`);
+      setProgress(100, "Clip listo", `Clip ${nn} (${fmtLabel}) descargado.`);
+    }catch(error){
+      if(error && error.cancelled) return;
+      console.error(error);
+      showNotice("No se ha podido generar el clip." + (error?.message ? ` Detalle: ${error.message}` : ""),"error");
+      setProgress(0,"Error al generar el MP4","El detalle técnico aparece debajo si FFmpeg ha devuelto información.");
+    }finally{
+      dl.classList.remove("is-busy");
+      dl.textContent = label;
+    }
   });
-  card.querySelector(".download").href = url;
+
   results.appendChild(card);
 }
 
-generateBtn.addEventListener("click",generateClips);
+generateBtn.addEventListener("click", generateClips);
