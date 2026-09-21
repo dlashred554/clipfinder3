@@ -21,6 +21,7 @@ let ffmpeg = null;
 let fetchFile = null;
 let toBlobURL = null;
 let ffmpegReady = false;
+let currentClip = {index:0,total:0};
 
 function formatTime(seconds){
   seconds = Math.max(0, Number(seconds) || 0);
@@ -166,7 +167,20 @@ async function loadFFmpeg(){
 
   ffmpeg.on("log", ({message}) => {
     console.log("[ClipFinder FFmpeg]", message);
-    if(/error|invalid|failed|unable|unknown/i.test(message)) addFfmpegLog(message);
+    addFfmpegLog(message);
+  });
+
+  // Progreso real del clip que se está convirtiendo (0..1)
+  ffmpeg.on("progress", ({progress}) => {
+    if(!Number.isFinite(progress) || currentClip.total === 0) return;
+    const p = Math.max(0, Math.min(1, progress));
+    const base = 8 + ((currentClip.index-1)/currentClip.total)*88;
+    const span = 88/currentClip.total;
+    setProgress(
+      base + p*span,
+      `Generando clip ${currentClip.index} de ${currentClip.total}…`,
+      `${Math.round(p*100)}% de este clip · convirtiendo a MP4`
+    );
   });
 
   const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
@@ -206,15 +220,18 @@ async function exportOneClip(inputName,start,end,index,total){
     `${formatTime(start)} → ${formatTime(end)} · convirtiendo a MP4`
   );
 
-  await ffmpeg.exec([
+  currentClip = {index,total};
+
+  const code = await ffmpeg.exec([
     "-ss", String(start),
     "-i", inputName,
     "-t", String(duration),
     "-map", "0:v:0",
     "-map", "0:a?",
+    "-vf", "scale=-2:'min(720,ih)'",
     "-c:v", "libx264",
     "-preset", "ultrafast",
-    "-crf", "23",
+    "-crf", "26",
     "-pix_fmt", "yuv420p",
     "-c:a", "aac",
     "-b:a", "128k",
@@ -222,6 +239,7 @@ async function exportOneClip(inputName,start,end,index,total){
     "-y",
     outputName
   ]);
+  if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
 
   const data = await ffmpeg.readFile(outputName);
   const blob = new Blob([data.buffer], {type:"video/mp4"});
