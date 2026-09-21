@@ -322,46 +322,43 @@ function warmUp(){
 /* ---------- Exportación de un clip ---------- */
 
 function buildExportArgs(fmt, start, duration, input, output){
-  let filter;
+  // ORIGINAL: copia directa, sin recodificar. Es la ruta mas rapida.
   if(fmt === "original"){
-    // Mismo encuadre que el vídeo, limitado a MAX_HEIGHT para que sea rápido.
-    filter = `[0:v]scale=-2:'min(${MAX_HEIGHT},ih)',setsar=1,format=yuv420p[v]`;
-  }else{
-    const {w:W,h:H} = FORMATS[fmt];
-    const srcAspect = videoWidth && videoHeight ? videoWidth/videoHeight : 16/9;
-    if(Math.abs(srcAspect/(W/H) - 1) < 0.02){
-      // Ya tiene ese formato: no hace falta fondo.
-      filter = `[0:v]scale=${W}:${H},setsar=1,format=yuv420p[v]`;
-    }else{
-      // Fondo: el propio clip reducido, muy desenfocado y ampliado (barato de calcular).
-      // Encima: el clip completo, centrado y sin recortar.
-      const bw = Math.round(W/8), bh = Math.round(H/8);
-      filter =
-        `[0:v]split=2[bgsrc][fgsrc];` +
-        `[bgsrc]scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},boxblur=3:2,scale=${W}:${H},setsar=1[bg];` +
-        `[fgsrc]scale=${W}:${H}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[fg];` +
-        `[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`;
-    }
+    return [
+      "-ss", String(start),
+      "-i", input,
+      "-t", String(duration),
+      "-map", "0:v:0",
+      "-map", "0:a?",
+      "-c", "copy",
+      "-avoid_negative_ts", "make_zero",
+      "-movflags", "+faststart",
+      "-y", output
+    ];
   }
 
+  // Los formatos vertical/horizontal necesitan recodificacion.
+  const {w:W,h:H} = FORMATS[fmt];
+  const srcAspect = videoWidth && videoHeight ? videoWidth/videoHeight : 16/9;
+  let filter;
+  if(Math.abs(srcAspect/(W/H) - 1) < 0.02){
+    filter = `[0:v]scale=${W}:${H},setsar=1,format=yuv420p[v]`;
+  }else{
+    const bw=Math.round(W/8), bh=Math.round(H/8);
+    filter =
+      `[0:v]split=2[bgsrc][fgsrc];` +
+      `[bgsrc]scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},boxblur=3:2,scale=${W}:${H},setsar=1[bg];` +
+      `[fgsrc]scale=${W}:${H}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[fg];` +
+      `[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`;
+  }
   return [
-    "-ss", String(start),          // antes de -i: salto rápido y, al recodificar, exacto
-    "-i", input,
-    "-t", String(duration),
-    "-filter_complex", filter,
-    "-map", "[v]",
-    "-map", "0:a?",
-    "-c:v", "libx264",
-    "-preset", "ultrafast",
-    "-crf", "24",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-movflags", "+faststart",
-    "-y",
-    output
+    "-ss", String(start), "-i", input, "-t", String(duration),
+    "-filter_complex", filter, "-map", "[v]", "-map", "0:a?",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
+    "-movflags", "+faststart", "-y", output
   ];
 }
-
 function cancelledError(){
   const e = new Error("cancelado");
   e.cancelled = true;
@@ -480,7 +477,7 @@ function addClipCard(index,segment){
     if(dl.classList.contains("is-busy")) return;
 
     const fmt = getDownloadFormat();
-    const fmtLabel = FORMATS[fmt].label;
+    const fmtLabel = fmt === "original" ? "Original · rápido" : FORMATS[fmt].label;
     dl.classList.add("is-busy");
     dl.textContent = outputCache.has(`${index}-${fmt}`) ? "Descargando…" : "En cola…";
 
