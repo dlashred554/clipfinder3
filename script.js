@@ -1,3 +1,40 @@
+
+// GitHub Pages fix:
+// @ffmpeg/ffmpeg creates its worker from the CDN URL. Browsers block a
+// cross-origin Worker, so we create a same-origin Blob worker that imports
+// the official CDN worker as an ES module.
+(function installFfmpegWorkerFix(){
+  const NativeWorker = window.Worker;
+  if (!NativeWorker || window.__clipFinderWorkerFix) return;
+  window.__clipFinderWorkerFix = true;
+
+  const originalWorker = NativeWorker;
+  window.Worker = function(url, options){
+    const urlString = String(url);
+    if (urlString.includes("@ffmpeg/ffmpeg") && urlString.endsWith("/worker.js")) {
+      const bootstrap = `
+        import(${JSON.stringify(urlString)}).catch((error) => {
+          self.postMessage({
+            type: "ERROR",
+            data: String(error && error.message ? error.message : error)
+          });
+        });
+      `;
+      const blobUrl = URL.createObjectURL(
+        new Blob([bootstrap], {type:"text/javascript"})
+      );
+      const worker = new originalWorker(blobUrl, Object.assign({}, options, {type:"module"}));
+      const revoke = () => {
+        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+      };
+      worker.addEventListener("error", revoke, {once:true});
+      return worker;
+    }
+    return new originalWorker(url, options);
+  };
+  window.Worker.prototype = NativeWorker.prototype;
+})();
+
 const videoInput = document.getElementById("videoInput");
 const dropzone = document.getElementById("dropzone");
 const sourceVideo = document.getElementById("sourceVideo");
