@@ -1,116 +1,25 @@
 /* ==========================================================================
-   ClipFinder – Lógica de la interfaz (versión de demostración, sin backend)
-
-   Índice:
-   1. Datos de ejemplo        2. Utilidades           3. Onda de audio
-   4. Formulario de entrada   5. Análisis simulado    6. Resultados
-   7. Previsualización        8. Descarga (simulada)  9. Avisos e inicio
-
-   PUNTOS DE CONEXIÓN CON EL BACKEND (cuando exista):
-   - startAnalysis()  -> aquí se enviaría el vídeo/URL al servidor y se
-                         recibiría la lista real de clips.
-   - downloadClip()   -> aquí se pediría al servidor el archivo MP4 del clip.
+   ClipFinder – Fase 1 funcional
+   Vídeo local -> selección -> previsualización -> MP4 real
+   El procesamiento del MP4 se hace en el navegador mediante ffmpeg.wasm.
    ========================================================================== */
 
 (() => {
   'use strict';
 
-  /* ------------------------------------------------------------------
-     1. DATOS DE EJEMPLO
-     Lista en orden cronológico. En la versión real vendrá del servidor.
-     start = segundo de inicio, len = duración en segundos, score = 0-100
-     ------------------------------------------------------------------ */
-  const DEMO_DURATION = 1935; // 00:32:15
-
-  const CLIP_TEMPLATES = [
-    { start: 95,   len: 24, score: 71, title: 'Una apertura con gancho',
-      why: 'Arranca con una pregunta directa y un cambio de tono que atrapa la atención desde el primer segundo.',
-      tags: ['Buen arranque', 'Pregunta directa'] },
-    { start: 272,  len: 36, score: 94, title: 'El momento más sorprendente',
-      why: 'Pico de energía en la voz seguido de una pausa dramática. Es el fragmento con más probabilidades de compartirse.',
-      tags: ['Pico de energía', 'Pausa dramática'] },
-    { start: 468,  len: 52, score: 88, title: 'La explicación que lo aclara todo',
-      why: 'Resume una idea compleja en pocas frases, con ritmo constante y un cierre claro y fácil de recordar.',
-      tags: ['Idea clara', 'Ritmo constante'] },
-    { start: 690,  len: 18, score: 76, title: 'Una reacción espontánea',
-      why: 'Reacción natural y breve, con risas y un cambio de expresión que conecta con la audiencia.',
-      tags: ['Risas', 'Espontáneo'] },
-    { start: 905,  len: 68, score: 91, title: 'La anécdota que engancha',
-      why: 'Historia personal con planteamiento, tensión y desenlace dentro del mismo fragmento. Se entiende sin contexto previo.',
-      tags: ['Historia completa', 'Tensión'] },
-    { start: 1120, len: 29, score: 83, title: 'Un consejo práctico en 30 segundos',
-      why: 'Da un consejo concreto y accionable, ideal para quien busca aprender algo rápido.',
-      tags: ['Consejo útil', 'Autocontenido'] },
-    { start: 1310, len: 45, score: 79, title: 'El dato que todos querrán compartir',
-      why: 'Incluye una cifra llamativa explicada con calma. Los datos concretos suelen generar más comentarios.',
-      tags: ['Dato llamativo', 'Compartible'] },
-    { start: 1490, len: 84, score: 86, title: 'El debate más intenso',
-      why: 'Intercambio con mucha energía y opiniones enfrentadas. Mantiene el interés durante todo el fragmento.',
-      tags: ['Alta energía', 'Opiniones'] },
-    { start: 1690, len: 21, score: 68, title: 'Un momento de humor',
-      why: 'Broma breve con buena respuesta. Se entiende sin haber visto el resto del vídeo.',
-      tags: ['Humor', 'Corto'] },
-    { start: 1822, len: 58, score: 82, title: 'Un cierre con mensaje',
-      why: 'Resumen final con una llamada a la acción clara. Buen punto de salida para redes sociales.',
-      tags: ['Conclusión', 'Llamada a la acción'] }
-  ];
-
-  const STAGES = [
-    { at: 0,  name: 'Preparar vídeo',   msg: 'Preparando el vídeo…' },
-    { at: 12, name: 'Extraer audio',    msg: 'Extrayendo el audio…' },
-    { at: 32, name: 'Analizar voz',     msg: 'Analizando voz, ritmo y energía…' },
-    { at: 62, name: 'Detectar picos',   msg: 'Detectando los momentos con más interés…' },
-    { at: 86, name: 'Puntuar y ordenar', msg: 'Puntuando y ordenando los clips…' }
-  ];
-
-  const ANALYSIS_MS = 8000;
-  const MIN_VIDEO_SECONDS = 20;
-  const PREVIEW_HUES = [255, 215, 185, 285, 330, 20];
-
-  /* ------------------------------------------------------------------
-     2. UTILIDADES
-     ------------------------------------------------------------------ */
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-  const pad = (n) => String(n).padStart(2, '0');
-  const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function formatTime(sec) {
-    sec = Math.max(0, Math.round(sec));
-    return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor((sec % 3600) / 60))}:${pad(sec % 60)}`;
-  }
-
-  function formatShort(sec) {
-    sec = Math.max(0, Math.floor(sec));
-    return `${Math.floor(sec / 60)}:${pad(sec % 60)}`;
-  }
-
-  function formatSize(bytes) {
-    const nf = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 });
-    const mb = bytes / (1024 * 1024);
-    return mb >= 1024 ? `${nf.format(mb / 1024)} GB` : `${nf.format(mb)} MB`;
-  }
-
-  function scrollToEl(el) {
-    el.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
-  }
-
-  const ICON_PLAY = '<svg class="icon-play" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>';
-  const ICON_PAUSE = '<svg class="icon-pause" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.5" height="14" rx="1.2"/><rect x="13.5" y="5" width="4.5" height="14" rx="1.2"/></svg>';
-  const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>';
-
-  /* ------------------------------------------------------------------
-     Estado y referencias al DOM
-     ------------------------------------------------------------------ */
   const state = {
     tab: 'url',
-    file: null,          // { file, url, duration }
-    source: null,        // { type, name, duration, real, url }
-    clips: [],           // en orden cronológico
-    filter: 'all',
-    sort: 'score',
-    raf: 0,              // animación del análisis
-    analyzing: false
+    file: null,
+    duration: 0,
+    editor: null,
+    previewing: false,
+    previewTimer: 0,
+    ffmpeg: null,
+    ffmpegLoaded: false,
+    exporting: false
   };
 
   const els = {
@@ -126,101 +35,38 @@
     fileName: $('#fileName'),
     fileMeta: $('#fileMeta'),
     fileRemove: $('#fileRemove'),
-    consent: $('#consent'),
     rights: $('#rightsCheck'),
+    consent: $('#consent'),
     error: $('#formError'),
-
+    analyzeBtn: $('#analyzeBtn'),
     analysisCard: $('#analysisCard'),
-    analysisSource: $('#analysisSource'),
-    analysisNote: $('#analysisNote'),
-    analysisWave: $('#analysisWave'),
-    cancelBtn: $('#cancelBtn'),
-    progressBar: $('#progressBar'),
-    progressFill: $('#progressFill'),
-    statusText: $('#statusText'),
-    percentText: $('#percentText'),
-    statDuration: $('#statDuration'),
-    statFound: $('#statFound'),
-    statEta: $('#statEta'),
-    stages: $('#stages'),
-
     results: $('#results'),
-    resultsMeta: $('#resultsMeta'),
-    newBtn: $('#newBtn'),
-    overviewTrack: $('#overviewTrack'),
-    overviewEnd: $('#overviewEnd'),
-    chips: $$('#filterChips .chip'),
-    sortSelect: $('#sortSelect'),
-    resultsCount: $('#resultsCount'),
-    clipList: $('#clipList'),
-    emptyState: $('#emptyState'),
-    showAllBtn: $('#showAllBtn'),
-
     headerCta: $('#headerCta'),
     toastRegion: $('#toastRegion')
   };
 
-  /* ------------------------------------------------------------------
-     3. ONDA DE AUDIO (decorativa)
-     ------------------------------------------------------------------ */
-  function buildWave(container, count, seed) {
-    container.textContent = '';
-    const bars = [];
-    for (let i = 0; i < count; i++) {
-      const t = i / count;
-      const v = 0.36
-        + 0.24 * Math.sin(t * 23 + seed)
-        + 0.20 * Math.sin(t * 61 + seed * 2.3)
-        + 0.14 * Math.sin(t * 137 + seed * 0.7);
-      const bar = document.createElement('span');
-      bar.className = 'wave__bar';
-      bar.style.setProperty('--h', `${Math.round(Math.max(0.14, Math.min(1, v)) * 100)}%`);
-      container.appendChild(bar);
-      bars.push(bar);
-    }
-    return bars;
+  function formatTime(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  function initHeroWave() {
-    const box = $('#heroWaveBox');
-    const N = 84;
-    const bars = buildWave($('#heroWave'), N, 3);
-    const segments = [
-      { from: 11, to: 15, score: 94 },
-      { from: 38, to: 43, score: 91 },
-      { from: 62, to: 67, score: 88 }
-    ];
-
-    const tags = segments.map((s) => {
-      const tag = document.createElement('span');
-      tag.className = 'wave__tag';
-      tag.textContent = `${s.score}/100`;
-      tag.style.left = `${((s.from + s.to + 1) / 2 / N) * 100}%`;
-      box.appendChild(tag);
-      return tag;
-    });
-
-    // Un único momento animado: las barras doradas se encienden una a una.
-    const light = () => {
-      segments.forEach((s, k) => {
-        for (let i = s.from; i <= s.to; i++) {
-          bars[i].style.transitionDelay = reduceMotion() ? '0ms' : `${k * 420 + (i - s.from) * 70}ms`;
-          bars[i].classList.add('is-lit');
-        }
-        tags[k].style.transitionDelay = reduceMotion() ? '0ms' : `${k * 420 + 300}ms`;
-        tags[k].classList.add('is-visible');
-      });
-    };
-    window.setTimeout(light, reduceMotion() ? 0 : 500);
+  function formatShort(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   }
 
-  /* ------------------------------------------------------------------
-     4. FORMULARIO DE ENTRADA
-     ------------------------------------------------------------------ */
+  function formatSize(bytes) {
+    const mb = bytes / (1024 * 1024);
+    return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(1)} MB`;
+  }
+
   function showError(message, focusEl, markEl) {
     els.error.textContent = message;
     els.error.hidden = false;
-    [els.urlInput, els.dropzone].forEach((el) => el.removeAttribute('aria-invalid'));
+    [els.urlInput, els.dropzone].forEach(el => el && el.removeAttribute('aria-invalid'));
     els.consent.classList.remove('is-invalid');
     if (markEl === els.consent) els.consent.classList.add('is-invalid');
     else if (markEl) markEl.setAttribute('aria-invalid', 'true');
@@ -230,13 +76,27 @@
   function clearError() {
     els.error.hidden = true;
     els.error.textContent = '';
-    [els.urlInput, els.dropzone].forEach((el) => el.removeAttribute('aria-invalid'));
+    [els.urlInput, els.dropzone].forEach(el => el && el.removeAttribute('aria-invalid'));
     els.consent.classList.remove('is-invalid');
+  }
+
+  function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    els.toastRegion.appendChild(toast);
+    while (els.toastRegion.children.length > 3) {
+      els.toastRegion.firstElementChild.remove();
+    }
+    window.setTimeout(() => {
+      toast.classList.add('is-leaving');
+      window.setTimeout(() => toast.remove(), 320);
+    }, 4200);
   }
 
   function selectTab(name) {
     state.tab = name;
-    els.tabs.forEach((tab) => {
+    els.tabs.forEach(tab => {
       const selected = tab.dataset.tab === name;
       tab.setAttribute('aria-selected', String(selected));
       tab.tabIndex = selected ? 0 : -1;
@@ -244,11 +104,20 @@
     els.panelUrl.hidden = name !== 'url';
     els.panelFile.hidden = name !== 'file';
     clearError();
+
+    if (name === 'url') {
+      removeEditor();
+    } else if (state.file) {
+      buildEditor();
+    }
   }
 
   function releaseFile() {
+    stopPreview();
+    removeEditor();
     if (state.file) URL.revokeObjectURL(state.file.url);
     state.file = null;
+    state.duration = 0;
     els.fileInput.value = '';
     els.fileChip.hidden = true;
     els.dropzone.hidden = false;
@@ -258,576 +127,609 @@
     clearError();
     if (!file) return;
 
-    const looksLikeVideo = file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm|ogv)$/i.test(file.name);
+    const looksLikeVideo =
+      file.type.startsWith('video/') ||
+      /\.(mp4|mov|m4v|webm|ogv|avi|mkv)$/i.test(file.name);
+
     if (!looksLikeVideo) {
       showError('Ese archivo no parece un vídeo. Prueba con MP4, MOV o WebM.');
       return;
     }
 
     releaseFile();
+
     const url = URL.createObjectURL(file);
     const probe = document.createElement('video');
     probe.preload = 'metadata';
     probe.muted = true;
+    probe.playsInline = true;
 
     probe.onloadedmetadata = () => {
       const duration = probe.duration;
       probe.removeAttribute('src');
       probe.load();
+
       if (!Number.isFinite(duration) || duration <= 0) {
         URL.revokeObjectURL(url);
         showError('No hemos podido leer la duración del vídeo. Prueba con otro archivo.');
         return;
       }
+
       state.file = { file, url, duration };
+      state.duration = duration;
+
       els.fileName.textContent = file.name;
       els.fileMeta.textContent = `${formatSize(file.size)}, duración ${formatTime(duration)}`;
       els.dropzone.hidden = true;
       els.fileChip.hidden = false;
+
+      if (state.tab === 'file') {
+        buildEditor();
+      }
     };
+
     probe.onerror = () => {
       URL.revokeObjectURL(url);
-      showError('No hemos podido leer este vídeo. Prueba con un archivo MP4, MOV o WebM.');
+      showError('No hemos podido leer este vídeo. Prueba con un MP4, MOV o WebM.');
     };
+
     probe.src = url;
   }
 
+  function createEditorMarkup() {
+    const wrap = document.createElement('div');
+    wrap.className = 'clip-editor';
+    wrap.id = 'clipEditor';
+    wrap.innerHTML = `
+      <div class="clip-editor__head">
+        <div>
+          <h2 class="clip-editor__title">Recorta tu clip</h2>
+          <p class="clip-editor__sub">Elige el inicio y el final. Después podrás descargar un MP4 real.</p>
+        </div>
+      </div>
+
+      <div class="clip-editor__video-wrap">
+        <video class="clip-editor__video" id="editorVideo" controls playsinline preload="metadata"></video>
+      </div>
+
+      <div class="clip-editor__range">
+        <div class="clip-editor__range-title">
+          <span>Fragmento seleccionado</span>
+          <span id="editorSelectionLabel">00:00:00 → 00:00:00</span>
+        </div>
+
+        <div class="clip-editor__track" id="editorTrack">
+          <input id="editorStart" type="range" min="0" max="1" step="0.01" value="0"
+                 aria-label="Inicio del clip">
+          <input id="editorEnd" type="range" min="0" max="1" step="0.01" value="1"
+                 aria-label="Final del clip">
+        </div>
+
+        <div class="clip-editor__times">
+          <div class="clip-editor__time">
+            <small>Inicio</small>
+            <strong id="editorStartText">00:00:00</strong>
+          </div>
+          <div class="clip-editor__time">
+            <small>Final</small>
+            <strong id="editorEndText">00:00:00</strong>
+          </div>
+          <div class="clip-editor__time">
+            <small>Duración</small>
+            <strong id="editorDurationText">00:00:00</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="clip-editor__actions">
+        <button class="btn btn--ghost" type="button" id="previewClipBtn">Previsualizar fragmento</button>
+        <button class="btn btn--primary" type="button" id="downloadClipBtn">Descargar MP4</button>
+      </div>
+
+      <div class="clip-editor__progress" id="exportProgress" hidden>
+        <span id="exportProgressFill"></span>
+      </div>
+      <p class="clip-editor__status" id="editorStatus" aria-live="polite">
+        Selecciona el fragmento que quieras.
+      </p>
+    `;
+    return wrap;
+  }
+
+  function buildEditor() {
+    if (!state.file) return;
+
+    removeEditor();
+
+    const editor = createEditorMarkup();
+    els.form.insertBefore(editor, els.analyzeBtn);
+
+    state.editor = {
+      root: editor,
+      video: $('#editorVideo', editor),
+      start: $('#editorStart', editor),
+      end: $('#editorEnd', editor),
+      startText: $('#editorStartText', editor),
+      endText: $('#editorEndText', editor),
+      durationText: $('#editorDurationText', editor),
+      selectionLabel: $('#editorSelectionLabel', editor),
+      track: $('#editorTrack', editor),
+      previewBtn: $('#previewClipBtn', editor),
+      downloadBtn: $('#downloadClipBtn', editor),
+      status: $('#editorStatus', editor),
+      progress: $('#exportProgress', editor),
+      progressFill: $('#exportProgressFill', editor)
+    };
+
+    state.editor.video.src = state.file.url;
+
+    const setup = () => {
+      const duration = state.duration;
+      state.editor.start.max = String(duration);
+      state.editor.end.max = String(duration);
+      state.editor.start.value = '0';
+      state.editor.end.value = String(duration);
+      updateEditor();
+
+      state.editor.video.addEventListener('timeupdate', handlePreviewTime);
+      state.editor.video.addEventListener('ended', stopPreview);
+    };
+
+    if (state.editor.video.readyState >= 1) setup();
+    else state.editor.video.addEventListener('loadedmetadata', setup, { once: true });
+
+    state.editor.start.addEventListener('input', () => {
+      if (Number(state.editor.start.value) >= Number(state.editor.end.value)) {
+        state.editor.start.value = String(Math.max(0, Number(state.editor.end.value) - 0.1));
+      }
+      updateEditor();
+    });
+
+    state.editor.end.addEventListener('input', () => {
+      if (Number(state.editor.end.value) <= Number(state.editor.start.value)) {
+        state.editor.end.value = String(Math.min(state.duration, Number(state.editor.start.value) + 0.1));
+      }
+      updateEditor();
+    });
+
+    state.editor.previewBtn.addEventListener('click', togglePreview);
+    state.editor.downloadBtn.addEventListener('click', exportClip);
+
+    els.analyzeBtn.textContent = 'Seleccionar otro vídeo';
+    els.analyzeBtn.type = 'button';
+    els.analyzeBtn.onclick = () => {
+      releaseFile();
+      selectTab('file');
+    };
+
+    setStatus('Listo. Puedes mover los dos controles para elegir el fragmento.');
+    editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function removeEditor() {
+    stopPreview();
+
+    if (state.editor?.video) {
+      state.editor.video.pause();
+      state.editor.video.removeAttribute('src');
+      state.editor.video.load();
+    }
+
+    const old = $('#clipEditor');
+    if (old) old.remove();
+
+    state.editor = null;
+
+    if (els.analyzeBtn) {
+      els.analyzeBtn.textContent = 'Analizar vídeo';
+      els.analyzeBtn.type = 'submit';
+      els.analyzeBtn.onclick = null;
+    }
+  }
+
+  function getSelection() {
+    if (!state.editor) return { start: 0, end: 0, duration: 0 };
+    const start = Number(state.editor.start.value);
+    const end = Number(state.editor.end.value);
+    return { start, end, duration: Math.max(0, end - start) };
+  }
+
+  function updateEditor() {
+    if (!state.editor) return;
+
+    const { start, end, duration } = getSelection();
+    state.editor.startText.textContent = formatTime(start);
+    state.editor.endText.textContent = formatTime(end);
+    state.editor.durationText.textContent = formatTime(duration);
+    state.editor.selectionLabel.textContent = `${formatTime(start)} → ${formatTime(end)}`;
+
+    const total = Math.max(0.001, state.duration);
+    state.editor.track.style.setProperty('--start-p', `${(start / total) * 100}%`);
+    state.editor.track.style.setProperty('--end-p', `${(end / total) * 100}%`);
+
+    if (!state.previewing && state.editor.video) {
+      const t = Math.min(Math.max(start, 0), Math.max(0, state.duration - 0.01));
+      if (Math.abs(state.editor.video.currentTime - t) > 0.15) {
+        try { state.editor.video.currentTime = t; } catch (_) {}
+      }
+    }
+  }
+
+  function setStatus(message, kind = '') {
+    if (!state.editor) return;
+    state.editor.status.textContent = message;
+    state.editor.status.className = `clip-editor__status${kind ? ` is-${kind}` : ''}`;
+  }
+
+  function togglePreview() {
+    if (!state.editor) return;
+
+    if (state.previewing) {
+      stopPreview();
+      return;
+    }
+
+    const { start, end } = getSelection();
+    if (end - start < 0.1) {
+      setStatus('El fragmento es demasiado corto.', 'error');
+      return;
+    }
+
+    const video = state.editor.video;
+    state.previewing = true;
+    state.editor.previewBtn.textContent = 'Detener previsualización';
+    setStatus(`Previsualizando ${formatShort(end - start)}…`);
+
+    const begin = () => {
+      try {
+        video.currentTime = start;
+        const p = video.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {
+            stopPreview();
+            setStatus('El navegador no ha podido reproducir este vídeo.', 'error');
+          });
+        }
+      } catch (_) {
+        stopPreview();
+        setStatus('No se ha podido iniciar la previsualización.', 'error');
+      }
+    };
+
+    if (video.readyState >= 2) begin();
+    else video.addEventListener('loadeddata', begin, { once: true });
+
+    clearInterval(state.previewTimer);
+    state.previewTimer = window.setInterval(() => {
+      if (!state.previewing) return;
+      if (video.currentTime >= end - 0.03 || video.ended) stopPreview();
+    }, 50);
+  }
+
+  function handlePreviewTime() {
+    if (!state.previewing || !state.editor) return;
+    const { end } = getSelection();
+    if (state.editor.video.currentTime >= end - 0.03) {
+      stopPreview();
+    }
+  }
+
+  function stopPreview() {
+    state.previewing = false;
+    clearInterval(state.previewTimer);
+    state.previewTimer = 0;
+
+    if (!state.editor) return;
+
+    state.editor.video.pause();
+    state.editor.previewBtn.textContent = 'Previsualizar fragmento';
+
+    const { start } = getSelection();
+    try { state.editor.video.currentTime = start; } catch (_) {}
+    setStatus('Listo. Puedes mover los controles para elegir otro fragmento.');
+  }
+
+  async function loadFFmpeg() {
+    if (state.ffmpegLoaded) return state.ffmpeg;
+
+    setStatus('Preparando el motor de exportación…');
+    state.editor.downloadBtn.disabled = true;
+
+    try {
+      const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([
+        import('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js'),
+        import('https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js')
+      ]);
+
+      const ffmpeg = new FFmpeg();
+
+      ffmpeg.on('progress', ({ progress }) => {
+        if (!state.editor) return;
+        const pct = Math.max(0, Math.min(100, Math.round(progress * 100)));
+        state.editor.progress.hidden = false;
+        state.editor.progressFill.style.width = `${pct}%`;
+        setStatus(`Generando MP4… ${pct}%`);
+      });
+
+      ffmpeg.on('log', ({ message }) => {
+        console.debug('[FFmpeg]', message);
+      });
+
+      const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
+
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
+      });
+
+      state.ffmpeg = ffmpeg;
+      state.fetchFile = fetchFile;
+      state.ffmpegLoaded = true;
+      return ffmpeg;
+    } finally {
+      if (state.editor) state.editor.downloadBtn.disabled = false;
+    }
+  }
+
+  function safeInputExtension(fileName) {
+    const match = String(fileName).toLowerCase().match(/\.([a-z0-9]+)$/);
+    const ext = match ? match[1] : 'mp4';
+    const allowed = new Set(['mp4', 'mov', 'm4v', 'webm', 'ogv', 'avi', 'mkv']);
+    return allowed.has(ext) ? ext : 'mp4';
+  }
+
+  async function exportClip() {
+    if (state.exporting || !state.file || !state.editor) return;
+
+    clearError();
+
+    if (!els.rights.checked) {
+      showError(
+        'Confirma primero que tienes los derechos o la autorización necesaria para usar este vídeo.',
+        els.rights,
+        els.consent
+      );
+      return;
+    }
+
+    const { start, end, duration } = getSelection();
+
+    if (duration < 0.5) {
+      setStatus('El fragmento debe durar al menos medio segundo.', 'error');
+      return;
+    }
+
+    state.exporting = true;
+    state.editor.downloadBtn.disabled = true;
+    state.editor.previewBtn.disabled = true;
+    state.editor.progress.hidden = false;
+    state.editor.progressFill.style.width = '0%';
+
+    try {
+      const ffmpeg = await loadFFmpeg();
+      const inputName = `input.${safeInputExtension(state.file.file.name)}`;
+      const outputName = 'clipfinder_clip.mp4';
+
+      setStatus('Cargando el vídeo en el procesador local…');
+
+      await ffmpeg.writeFile(inputName, await state.fetchFile(state.file.file));
+
+      setStatus('Recortando y convirtiendo a MP4…');
+
+      await ffmpeg.exec([
+        '-ss', String(start),
+        '-i', inputName,
+        '-t', String(duration),
+        '-map', '0:v:0',
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-avoid_negative_ts', 'make_zero',
+        outputName
+      ]);
+
+      const data = await ffmpeg.readFile(outputName);
+      const blob = new Blob([data.buffer], { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `clip-${formatFileNumber(start)}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+      try { await ffmpeg.deleteFile(inputName); } catch (_) {}
+      try { await ffmpeg.deleteFile(outputName); } catch (_) {}
+
+      state.editor.progressFill.style.width = '100%';
+      setStatus('MP4 generado y descargado correctamente.', 'ok');
+      showToast('El clip MP4 se ha descargado en tu ordenador.');
+    } catch (error) {
+      console.error(error);
+      setStatus(
+        'No se ha podido generar el MP4. Prueba primero con un vídeo MP4 o WebM más corto.',
+        'error'
+      );
+      showToast('Ha ocurrido un error al exportar el clip.');
+    } finally {
+      state.exporting = false;
+      if (state.editor) {
+        state.editor.downloadBtn.disabled = false;
+        state.editor.previewBtn.disabled = false;
+      }
+    }
+  }
+
+  function formatFileNumber(start) {
+    return String(Math.max(1, Math.floor(start) + 1)).padStart(2, '0');
+  }
+
+  function validateForm() {
+    clearError();
+
+    if (state.tab === 'url') {
+      showError(
+        'La Fase 1 funciona con vídeos subidos desde tu ordenador. La función de enlaces la añadiremos después.',
+        els.urlInput,
+        els.urlInput
+      );
+      return false;
+    }
+
+    if (!state.file) {
+      showError('Selecciona primero un archivo de vídeo.', els.fileInput, els.dropzone);
+      return false;
+    }
+
+    if (!els.rights.checked) {
+      showError(
+        'Confirma que este vídeo es tuyo o que tienes autorización para usarlo.',
+        els.rights,
+        els.consent
+      );
+      return false;
+    }
+
+    return true;
+  }
+
   function initForm() {
-    els.tabs.forEach((tab) => {
+    els.tabs.forEach(tab => {
       tab.addEventListener('click', () => selectTab(tab.dataset.tab));
-      tab.addEventListener('keydown', (e) => {
+      tab.addEventListener('keydown', e => {
         if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-          const next = state.tab === 'url' ? 'file' : 'url';
-          selectTab(next);
-          $(`.tab[data-tab="${next}"]`).focus();
+          e.preventDefault();
+          selectTab(state.tab === 'url' ? 'file' : 'url');
+          $(`.tab[data-tab="${state.tab}"]`).focus();
         }
       });
     });
 
     els.fileInput.addEventListener('change', () => handleFile(els.fileInput.files[0]));
-    els.fileRemove.addEventListener('click', () => { releaseFile(); clearError(); });
-
-    ['dragenter', 'dragover'].forEach((type) =>
-      els.dropzone.addEventListener(type, (e) => { e.preventDefault(); els.dropzone.classList.add('is-over'); }));
-    ['dragleave', 'drop'].forEach((type) =>
-      els.dropzone.addEventListener(type, (e) => { e.preventDefault(); els.dropzone.classList.remove('is-over'); }));
-    els.dropzone.addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]));
-
-    // Evita que el navegador abra el vídeo si se suelta fuera de la zona
-    ['dragover', 'drop'].forEach((type) => window.addEventListener(type, (e) => e.preventDefault()));
-
-    els.form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const source = validateForm();
-      if (source) startAnalysis(source);
+    els.fileRemove.addEventListener('click', () => {
+      releaseFile();
+      clearError();
     });
-    els.rights.addEventListener('change', () => { if (els.rights.checked) clearError(); });
-  }
 
-  /** Devuelve el objeto "source" si todo es correcto, o null si hay un error. */
-  function validateForm() {
-    clearError();
-    let source;
-
-    if (state.tab === 'url') {
-      const raw = els.urlInput.value.trim();
-      if (!raw) {
-        showError('Pega la URL de tu vídeo o cambia a «Subir archivo».', els.urlInput, els.urlInput);
-        return null;
-      }
-      let parsed = null;
-      try { parsed = new URL(raw); } catch (_) { /* URL no válida */ }
-      if (!parsed || !/^https?:$/.test(parsed.protocol)) {
-        showError('La URL no parece válida. Debe empezar por http:// o https://', els.urlInput, els.urlInput);
-        return null;
-      }
-      const name = parsed.hostname.replace(/^www\./, '') + (parsed.pathname === '/' ? '' : parsed.pathname);
-      source = { type: 'url', name, duration: DEMO_DURATION, real: false, url: null };
-    } else {
-      if (!state.file) {
-        showError('Selecciona un archivo de vídeo para continuar.', $('#fileInput'), els.dropzone);
-        return null;
-      }
-      if (state.file.duration < MIN_VIDEO_SECONDS) {
-        showError(`El vídeo es demasiado corto. Necesitamos al menos ${MIN_VIDEO_SECONDS} segundos.`);
-        return null;
-      }
-      source = {
-        type: 'file', name: state.file.file.name, duration: state.file.duration,
-        real: true, url: state.file.url
-      };
-    }
-
-    if (!els.rights.checked) {
-      showError('Confirma que el vídeo es tuyo o que tienes autorización para usarlo.', els.rights, els.consent);
-      return null;
-    }
-    return source;
-  }
-
-  /* ------------------------------------------------------------------
-     5. ANÁLISIS SIMULADO
-     ------------------------------------------------------------------ */
-
-  /** Crea los clips de ejemplo. Con un archivo real, los reparte por su duración. */
-  function buildClips(duration, real) {
-    let items = CLIP_TEMPLATES.map((t) => ({ ...t }));
-
-    if (real) {
-      items = items.filter((t) => t.len <= duration * 0.8);
-      const total = () => items.reduce((sum, t) => sum + t.len, 0);
-      while (items.length && total() > duration * 0.85) {
-        const worst = items.reduce((a, b) => (a.score <= b.score ? a : b));
-        items = items.filter((t) => t !== worst);
-      }
-      const gap = (duration - total()) / (items.length + 1);
-      let cursor = gap;
-      items.forEach((t) => {
-        t.start = Math.round(cursor);
-        cursor += t.len + gap;
+    ['dragenter', 'dragover'].forEach(type => {
+      els.dropzone.addEventListener(type, e => {
+        e.preventDefault();
+        els.dropzone.classList.add('is-over');
       });
+    });
+
+    ['dragleave', 'drop'].forEach(type => {
+      els.dropzone.addEventListener(type, e => {
+        e.preventDefault();
+        els.dropzone.classList.remove('is-over');
+      });
+    });
+
+    els.dropzone.addEventListener('drop', e => {
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    ['dragover', 'drop'].forEach(type => {
+      window.addEventListener(type, e => e.preventDefault());
+    });
+
+    els.form.addEventListener('submit', e => {
+      e.preventDefault();
+
+      if (state.editor) {
+        if (state.file) {
+          state.editor.root.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+      }
+
+      if (!validateForm()) return;
+      buildEditor();
+    });
+
+    els.rights.addEventListener('change', () => {
+      if (els.rights.checked) clearError();
+    });
+  }
+
+  function initHeroWave() {
+    const box = $('#heroWaveBox');
+    const wave = $('#heroWave');
+    if (!box || !wave) return;
+
+    const count = 84;
+    wave.textContent = '';
+
+    for (let i = 0; i < count; i++) {
+      const t = i / count;
+      const v =
+        0.36 +
+        0.24 * Math.sin(t * 23 + 3) +
+        0.20 * Math.sin(t * 61 + 6.9) +
+        0.14 * Math.sin(t * 137 + 2.1);
+
+      const bar = document.createElement('span');
+      bar.className = 'wave__bar';
+      bar.style.setProperty('--h', `${Math.round(Math.max(0.14, Math.min(1, v)) * 100)}%`);
+      wave.appendChild(bar);
     }
 
-    items.forEach((t) => {
-      if (t.start + t.len > duration) t.start = Math.max(0, Math.floor(duration - t.len));
-      t.end = t.start + t.len;
-    });
+    const segments = [
+      { from: 11, to: 15, score: 94 },
+      { from: 38, to: 43, score: 91 },
+      { from: 62, to: 67, score: 88 }
+    ];
 
-    [...items].sort((a, b) => b.score - a.score).forEach((t, i) => {
-      t.rank = i + 1;   // el nº de clip es su posición por puntuación
-      t.id = t.rank;
-    });
-    return items;
-  }
+    segments.forEach((s, k) => {
+      const tag = document.createElement('span');
+      tag.className = 'wave__tag';
+      tag.textContent = `${s.score}/100`;
+      tag.style.left = `${((s.from + s.to + 1) / 2 / count) * 100}%`;
+      box.appendChild(tag);
 
-  function buildStageList() {
-    els.stages.textContent = '';
-    STAGES.forEach((s) => {
-      const li = document.createElement('li');
-      li.className = 'stage';
-      li.innerHTML = '<span class="stage__dot" aria-hidden="true"></span><span class="stage__name"></span>';
-      li.querySelector('.stage__name').textContent = s.name;
-      els.stages.appendChild(li);
-    });
-  }
-
-  function startAnalysis(source) {
-    if (state.analyzing) return;
-    state.analyzing = true;
-    state.source = source;
-    state.clips = buildClips(source.duration, source.real);
-    state.filter = 'all';
-    state.sort = 'score';
-
-    // Interfaz
-    els.form.hidden = true;
-    els.analysisCard.hidden = false;
-    els.analysisSource.textContent = source.name;
-    els.analysisNote.hidden = source.real;
-    els.statDuration.textContent = formatTime(source.duration);
-    els.statFound.textContent = '0';
-    buildStageList();
-
-    const N = window.matchMedia('(max-width: 600px)').matches ? 56 : 100;
-    const bars = buildWave(els.analysisWave, N, 7);
-    const ranges = state.clips.map((c) => {
-      const a = Math.min(N - 2, Math.floor((c.start / source.duration) * N));
-      const b = Math.min(N - 1, Math.max(a + 1, Math.floor((c.end / source.duration) * N)));
-      return { a, b, lit: false };
-    });
-    const wave = { bars, N, ranges, idx: -1 };
-
-    scrollToEl(els.panelSection);
-
-    const t0 = performance.now();
-    let lastStage = -1;
-
-    // PUNTO DE CONEXIÓN CON EL BACKEND: aquí se enviaría el vídeo o la URL
-    // al servidor. Ahora solo simulamos el avance del análisis.
-    const frame = (now) => {
-      const p = Math.min(1, (now - t0) / ANALYSIS_MS);
-      const pct = 100 * (0.5 - 0.5 * Math.cos(Math.PI * p));   // arranca y termina suave
-      const shown = Math.min(100, Math.round(pct));
-
-      els.progressFill.style.width = `${pct}%`;
-      els.progressBar.setAttribute('aria-valuenow', String(shown));
-      els.percentText.textContent = `${shown}%`;
-      els.statEta.textContent = p >= 1 ? '0 s' : `~${Math.ceil((1 - p) * ANALYSIS_MS / 1000)} s`;
-      els.statFound.textContent = String(
-        state.clips.filter((c) => (c.start / source.duration) * 100 <= pct).length
-      );
-
-      lastStage = updateStages(pct, lastStage);
-      updateWave(wave, pct);
-
-      if (p < 1) {
-        state.raf = requestAnimationFrame(frame);
-      } else {
-        els.statusText.textContent = 'Análisis completado';
-        $$('.stage', els.stages).forEach((li) => { li.classList.remove('is-active'); li.classList.add('is-done'); });
-        state.raf = window.setTimeout(showResults, 700);
-      }
-    };
-    state.raf = requestAnimationFrame(frame);
-  }
-
-  function updateStages(pct, last) {
-    let active = 0;
-    STAGES.forEach((s, i) => { if (pct >= s.at) active = i; });
-    if (active === last) return last;
-
-    $$('.stage', els.stages).forEach((li, i) => {
-      li.classList.toggle('is-done', i < active);
-      li.classList.toggle('is-active', i === active);
-    });
-    els.statusText.textContent = STAGES[active].msg;
-    return active;
-  }
-
-  function updateWave(w, pct) {
-    const idx = Math.min(w.N - 1, Math.floor((pct / 100) * w.N));
-    for (let i = w.idx + 1; i <= idx; i++) w.bars[i].classList.add('is-scanned');
-    w.idx = idx;
-    w.ranges.forEach((r) => {
-      if (!r.lit && idx >= r.b) {
-        r.lit = true;
-        for (let i = r.a; i <= r.b; i++) w.bars[i].classList.add('is-peak');
-      }
-    });
-    els.analysisWave.style.setProperty('--pos', `${pct}%`);
-  }
-
-  function stopAnalysis() {
-    cancelAnimationFrame(state.raf);
-    clearTimeout(state.raf);
-    state.analyzing = false;
-  }
-
-  /* ------------------------------------------------------------------
-     6. RESULTADOS
-     ------------------------------------------------------------------ */
-  function inRange(clip, filter) {
-    switch (filter) {
-      case '15-30': return clip.len >= 15 && clip.len <= 30;
-      case '30-60': return clip.len > 30 && clip.len <= 60;
-      case '60-90': return clip.len > 60 && clip.len <= 90;
-      default: return true;
-    }
-  }
-
-  function getVisibleClips() {
-    const sorters = {
-      score: (a, b) => b.score - a.score,
-      duration: (a, b) => b.len - a.len || b.score - a.score,
-      time: (a, b) => a.start - b.start
-    };
-    return state.clips.filter((c) => inRange(c, state.filter)).sort(sorters[state.sort]);
-  }
-
-  function showResults() {
-    state.analyzing = false;
-    els.analysisCard.hidden = true;
-    els.panelSection.hidden = true;
-    els.results.hidden = false;
-
-    // Cabecera con datos del vídeo (textContent: el nombre del archivo es texto del usuario)
-    els.resultsMeta.textContent = '';
-    [
-      { text: state.source.name, cls: 'meta__name' },
-      { text: `Duración ${formatTime(state.source.duration)}` },
-      { text: `${state.clips.length} clips detectados` }
-    ].forEach((item) => {
-      const span = document.createElement('span');
-      span.textContent = item.text;
-      if (item.cls) span.className = item.cls;
-      els.resultsMeta.appendChild(span);
-    });
-
-    // Contadores de los filtros
-    els.chips.forEach((chip) => {
-      const n = state.clips.filter((c) => inRange(c, chip.dataset.filter)).length;
-      $('.chip__count', chip).textContent = `(${n})`;
-    });
-    els.sortSelect.value = state.sort;
-    setFilterUI();
-
-    buildOverview();
-    renderList(true);
-    scrollToEl(els.results);
-  }
-
-  function buildOverview() {
-    const total = state.source.duration;
-    els.overviewEnd.textContent = formatTime(total);
-    els.overviewTrack.textContent = '';
-    state.clips.forEach((c) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'overview__clip';
-      btn.dataset.id = c.id;
-      btn.style.setProperty('--x', ((c.start / total) * 100).toFixed(3));
-      btn.style.setProperty('--w', (((c.end - c.start) / total) * 100).toFixed(3));
-      btn.setAttribute('aria-label', `Ir al clip ${c.rank}, ${formatTime(c.start)}`);
-      btn.title = `Clip #${c.rank}: ${formatTime(c.start)}`;
-      els.overviewTrack.appendChild(btn);
-    });
-  }
-
-  function clipCardHTML(c) {
-    const real = state.source.real;
-    const hue = PREVIEW_HUES[(c.rank - 1) % PREVIEW_HUES.length];
-    return `
-      <div class="preview">
-        <div class="preview__stage">
-          ${real ? `<video class="preview__video" src="${state.source.url}" preload="metadata" playsinline></video>` : ''}
-          <span class="preview__tag">${real ? 'Tu vídeo' : 'Vista previa simulada'}</span>
-          <span class="preview__time-tag">${formatTime(c.start)}</span>
-          <button class="preview__toggle" type="button" data-action="preview" aria-label="Previsualizar clip ${c.rank}">
-            <span class="icon-wrap">${ICON_PLAY}${ICON_PAUSE}</span>
-          </button>
-          <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-        </div>
-        <div class="preview__controls">
-          <div class="preview__bar"><span class="preview__fill"></span></div>
-          <span class="preview__time">0:00 / ${formatShort(c.len)}</span>
-        </div>
-      </div>
-      <div class="clip__body">
-        <div class="clip__top">
-          <span class="clip__num">Clip #${c.rank}</span>
-          <div class="score" aria-label="Puntuación: ${c.score} de 100">
-            <span class="score__ring" style="--p:${c.score}" aria-hidden="true"></span>
-            <span class="score__text"><small>Puntuación</small><strong>${c.score}/100</strong></span>
-          </div>
-        </div>
-        <h3 class="clip__title">${c.title}</h3>
-        <p class="clip__time">
-          <span class="clip__range">${formatTime(c.start)} → ${formatTime(c.end)}</span>
-          <span class="clip__duration">Duración: ${c.len} segundos</span>
-        </p>
-        <p class="clip__why">${c.why}</p>
-        <ul class="tags">${c.tags.map((t) => `<li>${t}</li>`).join('')}</ul>
-        <div class="clip__actions">
-          <button class="btn btn--ghost" type="button" data-action="preview"><span class="js-preview-label">Previsualizar</span></button>
-          <button class="btn btn--primary" type="button" data-action="download">${ICON_DOWNLOAD}<span>Descargar clip</span></button>
-        </div>
-      </div>`;
-  }
-
-  function renderList(animate) {
-    stopPreview();
-    const list = getVisibleClips();
-    els.clipList.textContent = '';
-
-    list.forEach((c, i) => {
-      const card = document.createElement('article');
-      card.className = 'clip' + (state.source.real ? ' clip--real' : '') + (animate ? ' clip--enter' : '');
-      card.id = `clip-${c.id}`;
-      card.dataset.id = c.id;
-      card.style.setProperty('--h', PREVIEW_HUES[(c.rank - 1) % PREVIEW_HUES.length]);
-      card.style.setProperty('--i', Math.min(i, 6));
-      card.innerHTML = clipCardHTML(c);
-      if (animate) card.addEventListener('animationend', () => card.classList.remove('clip--enter'), { once: true });
-
-      const video = $('video', card);
-      if (video) {
-        // Muestra el primer fotograma del clip como miniatura
-        video.addEventListener('loadedmetadata', () => {
-          video.currentTime = Math.min(c.start + 0.1, Math.max(0, video.duration - 0.1));
-        }, { once: true });
-      }
-      els.clipList.appendChild(card);
-    });
-
-    const visibleIds = new Set(list.map((c) => c.id));
-    $$('.overview__clip', els.overviewTrack).forEach((btn) => {
-      btn.classList.toggle('is-dim', !visibleIds.has(Number(btn.dataset.id)));
-    });
-
-    els.resultsCount.textContent = `Mostrando ${list.length} de ${state.clips.length} clips`;
-    els.emptyState.hidden = list.length > 0;
-  }
-
-  function setFilterUI() {
-    els.chips.forEach((chip) => chip.setAttribute('aria-pressed', String(chip.dataset.filter === state.filter)));
-  }
-
-  function initResults() {
-    els.chips.forEach((chip) => chip.addEventListener('click', () => {
-      state.filter = chip.dataset.filter;
-      setFilterUI();
-      renderList(false);
-    }));
-
-    els.sortSelect.addEventListener('change', () => {
-      state.sort = els.sortSelect.value;
-      renderList(false);
-    });
-
-    els.showAllBtn.addEventListener('click', () => {
-      state.filter = 'all';
-      setFilterUI();
-      renderList(false);
-    });
-
-    els.newBtn.addEventListener('click', resetToInput);
-    els.cancelBtn.addEventListener('click', resetToInput);
-
-    // Botón del mapa del vídeo: salta al clip
-    els.overviewTrack.addEventListener('click', (e) => {
-      const btn = e.target.closest('.overview__clip');
-      if (!btn) return;
-      const id = Number(btn.dataset.id);
-      if (!$(`#clip-${id}`)) {
-        state.filter = 'all';
-        setFilterUI();
-        renderList(false);
-      }
-      const card = $(`#clip-${id}`);
-      card.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center' });
-      card.classList.remove('is-flash');
-      void card.offsetWidth;              // reinicia la animación
-      card.classList.add('is-flash');
-    });
-
-    // Acciones de cada clip (delegación de eventos)
-    els.clipList.addEventListener('click', (e) => {
-      const actionEl = e.target.closest('[data-action]');
-      const card = e.target.closest('.clip');
-      if (!actionEl || !card) return;
-      const clip = state.clips.find((c) => c.id === Number(card.dataset.id));
-      if (actionEl.dataset.action === 'preview') togglePreview(clip, card);
-      if (actionEl.dataset.action === 'download') downloadClip(clip, actionEl);
-    });
-
-    // El botón de cabecera "Probar ahora" vuelve al formulario si estás viendo resultados
-    els.headerCta.addEventListener('click', (e) => {
-      if (!els.results.hidden) { e.preventDefault(); resetToInput(); }
+      window.setTimeout(() => {
+        for (let i = s.from; i <= s.to; i++) {
+          const bar = wave.children[i];
+          if (bar) bar.classList.add('is-lit');
+        }
+        tag.classList.add('is-visible');
+      }, 500 + k * 420);
     });
   }
 
   function resetToInput() {
-    stopAnalysis();
-    stopPreview();
-    els.clipList.textContent = '';          // libera los elementos <video>
-    state.clips = [];
-    els.results.hidden = true;
-    els.analysisCard.hidden = true;
+    releaseFile();
+    if (els.results) els.results.hidden = true;
+    if (els.analysisCard) els.analysisCard.hidden = true;
     els.panelSection.hidden = false;
     els.form.hidden = false;
-    scrollToEl(els.panelSection);
-  }
-
-  /* ------------------------------------------------------------------
-     7. PREVISUALIZACIÓN
-     - Con un archivo subido: se reproduce de verdad el fragmento.
-     - Con una URL: reproducción simulada (barra de progreso).
-     ------------------------------------------------------------------ */
-  let current = null;
-
-  function togglePreview(clip, card) {
-    if (current && current.clip.id === clip.id) { stopPreview(); return; }
-    stopPreview();
-    startPreview(clip, card);
-  }
-
-  function setPreviewLabels(card, clip, playing) {
-    $('.preview__toggle', card).setAttribute('aria-label',
-      `${playing ? 'Detener la previsualización del' : 'Previsualizar'} clip ${clip.rank}`);
-    $('.js-preview-label', card).textContent = playing ? 'Detener' : 'Previsualizar';
-  }
-
-  function startPreview(clip, card) {
-    const video = $('video', card);
-    const fill = $('.preview__fill', card);
-    const time = $('.preview__time', card);
-    const cur = { clip, card, video, raf: 0 };
-    current = cur;
-
-    card.classList.add('is-playing');
-    setPreviewLabels(card, clip, true);
-
-    const t0 = performance.now();
-    const tick = (now) => {
-      if (current !== cur) return;
-      const elapsed = video ? video.currentTime - clip.start : (now - t0) / 1000;
-      const done = video ? (video.currentTime >= clip.end || video.ended) : elapsed >= clip.len;
-      const shown = Math.min(Math.max(elapsed, 0), clip.len);
-      fill.style.width = `${(shown / clip.len) * 100}%`;
-      time.textContent = `${formatShort(shown)} / ${formatShort(clip.len)}`;
-      if (done) { stopPreview(); return; }
-      cur.raf = requestAnimationFrame(tick);
-    };
-
-    if (video) {
-      video.currentTime = clip.start;
-      video.play().then(() => { cur.raf = requestAnimationFrame(tick); }).catch(() => {
-        stopPreview();
-        showToast('Tu navegador no ha podido reproducir este vídeo.');
-      });
-    } else {
-      cur.raf = requestAnimationFrame(tick);
-    }
-  }
-
-  function stopPreview() {
-    if (!current) return;
-    const { clip, card, video, raf } = current;
-    current = null;
-    cancelAnimationFrame(raf);
-    if (video) {
-      video.pause();
-      video.currentTime = Math.min(clip.start + 0.1, Math.max(0, (video.duration || clip.start) - 0.1));
-    }
-    card.classList.remove('is-playing');
-    $('.preview__fill', card).style.width = '0';
-    $('.preview__time', card).textContent = `0:00 / ${formatShort(clip.len)}`;
-    setPreviewLabels(card, clip, false);
-  }
-
-  /* ------------------------------------------------------------------
-     8. DESCARGA (simulada)
-     ------------------------------------------------------------------ */
-  function downloadClip(clip, button) {
-    if (button.disabled) return;
-    const label = $('span', button);
-    const original = label.textContent;
-    button.disabled = true;
-    label.textContent = 'Preparando…';
-
-    // PUNTO DE CONEXIÓN CON EL BACKEND: aquí se pediría al servidor el MP4
-    // del tramo clip.start → clip.end y se lanzaría la descarga real.
-    window.setTimeout(() => {
-      button.disabled = false;
-      label.textContent = original;
-      showToast(
-        `Demostración: aquí se descargaría clip-${pad(clip.rank)}.mp4 (${formatTime(clip.start)} → ${formatTime(clip.end)}). ` +
-        'La exportación real llegará con el servidor de análisis.'
-      );
-    }, 900);
-  }
-
-  /* ------------------------------------------------------------------
-     9. AVISOS E INICIO
-     ------------------------------------------------------------------ */
-  function showToast(message) {
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
-    els.toastRegion.appendChild(toast);
-    while (els.toastRegion.children.length > 3) els.toastRegion.firstElementChild.remove();
-
-    window.setTimeout(() => {
-      toast.classList.add('is-leaving');
-      window.setTimeout(() => toast.remove(), 320);
-    }, 5200);
+    els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function init() {
-    $('#year').textContent = new Date().getFullYear();
+    const year = $('#year');
+    if (year) year.textContent = new Date().getFullYear();
+
     initHeroWave();
     initForm();
-    initResults();
+
+    if (els.headerCta) {
+      els.headerCta.addEventListener('click', () => {
+        window.setTimeout(() => {
+          els.panelSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 0);
+      });
+    }
+
+    if (els.results) els.results.hidden = true;
+    if (els.analysisCard) els.analysisCard.hidden = true;
   }
 
   init();
