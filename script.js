@@ -65,17 +65,33 @@ function setVideoFile(file){
 
   if(videoUrl) URL.revokeObjectURL(videoUrl);
   videoUrl = URL.createObjectURL(file);
+  sourceVideo.onloadedmetadata = () => {
+    const duration = Number(sourceVideo.duration);
+    if (Number.isFinite(duration) && duration > 0) {
+      videoDuration = duration;
+      fileInfo.innerHTML = `<b>${escapeHtml(file.name)}</b><span>${formatSize(file.size)} · ${formatTime(videoDuration)}</span>`;
+      generateBtn.disabled = false;
+    } else {
+      showNotice("No se ha podido leer la duración del vídeo. Prueba con otro MP4.","error");
+      generateBtn.disabled = true;
+    }
+  };
+
+  sourceVideo.oncanplay = () => {
+    const duration = Number(sourceVideo.duration);
+    if (!videoDuration && Number.isFinite(duration) && duration > 0) {
+      videoDuration = duration;
+      fileInfo.innerHTML = `<b>${escapeHtml(file.name)}</b><span>${formatSize(file.size)} · ${formatTime(videoDuration)}</span>`;
+      generateBtn.disabled = false;
+    }
+  };
+
   sourceVideo.src = videoUrl;
+  sourceVideo.load();
   sourceVideo.classList.remove("hidden");
 
-  fileInfo.innerHTML = `<b>${escapeHtml(file.name)}</b><span>${formatSize(file.size)} · cargando duración…</span>`;
+  fileInfo.innerHTML = `<b>${escapeHtml(file.name)}</b><span>${formatSize(file.size)} · leyendo duración…</span>`;
   fileInfo.classList.remove("hidden");
-
-  sourceVideo.onloadedmetadata = () => {
-    videoDuration = sourceVideo.duration;
-    fileInfo.innerHTML = `<b>${escapeHtml(file.name)}</b><span>${formatSize(file.size)} · ${formatTime(videoDuration)}</span>`;
-    generateBtn.disabled = !(videoDuration > 1 && Number.isFinite(videoDuration));
-  };
   sourceVideo.onerror = () => {
     showNotice("El navegador no puede reproducir este archivo. Para evitar el problema de MP4, utiliza un MP4 H.264/AAC.","error");
     generateBtn.disabled = true;
@@ -101,10 +117,10 @@ function escapeHtml(s){
 */
 function buildSegments(duration){
   let count, length;
-  if(duration <= 45){ count=2; length=Math.max(8, duration*0.38); }
-  else if(duration <= 120){ count=4; length=20; }
-  else if(duration <= 300){ count=5; length=30; }
-  else if(duration <= 900){ count=6; length=40; }
+  if(duration <= 30){ count=2; length=Math.max(5, duration*0.40); }
+  else if(duration <= 90){ count=3; length=18; }
+  else if(duration <= 180){ count=4; length=25; }
+  else if(duration <= 600){ count=6; length=40; }
   else { count=8; length=45; }
 
   length = Math.min(length, Math.max(4, duration - 1));
