@@ -156,7 +156,7 @@ async function loadFFmpeg(){
   if(ffmpegReady) return;
   setProgress(3,"Preparando el motor de vídeo…","Descargando el motor MP4. Solo ocurre la primera vez.");
 
-  const ffmpegModule = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js");
+  const ffmpegModule = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js");
   const utilModule = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js");
 
   ffmpeg = new ffmpegModule.FFmpeg();
@@ -211,7 +211,7 @@ async function exportOneClip(inputName,start,end,index,total){
   ]);
 
   const data = await ffmpeg.readFile(outputName);
-  const blob = new Blob([data], {type:"video/mp4"});
+  const blob = new Blob([data.buffer], {type:"video/mp4"});
   await ffmpeg.deleteFile(outputName);
   return URL.createObjectURL(blob);
 }
