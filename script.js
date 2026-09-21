@@ -135,11 +135,27 @@ function buildSegments(duration){
   return segments;
 }
 
+
+function getInputExtension(file){
+  const name = (file?.name || "").toLowerCase();
+  const match = name.match(/\.(mp4|mov|webm|mkv|mpeg|mpg|m4v)$/);
+  if(match) return match[1];
+  if(file?.type === "video/webm") return "webm";
+  if(file?.type === "video/quicktime") return "mov";
+  return "mp4";
+}
+
+function addFfmpegLog(message){
+  const log = document.getElementById("ffmpegLog");
+  if(!log) return;
+  log.classList.remove("hidden");
+  log.textContent = (log.textContent + message + "\n").slice(-6000);
+}
+
 async function loadFFmpeg(){
   if(ffmpegReady) return;
-  setProgress(3,"Preparando el motor MP4…","Descargando FFmpeg por primera vez puede tardar unos segundos.");
+  setProgress(3,"Preparando el motor de vídeo…","Descargando el motor MP4. Solo ocurre la primera vez.");
 
-  const coreURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
   const ffmpegModule = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js");
   const utilModule = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js");
 
@@ -147,22 +163,29 @@ async function loadFFmpeg(){
   fetchFile = utilModule.fetchFile;
   toBlobURL = utilModule.toBlobURL;
 
+  ffmpeg.on("log", ({message}) => {
+    console.log("[ClipFinder FFmpeg]", message);
+    if(/error|invalid|failed|unable|unknown/i.test(message)) addFfmpegLog(message);
+  });
+
+  const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
   await ffmpeg.load({
-    coreURL: await toBlobURL(`${coreURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${coreURL}/ffmpeg-core.wasm`, "application/wasm")
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm")
   });
   ffmpegReady = true;
 }
 
 async function writeInput(){
-  const inputName = "source_input";
+  const extension = getInputExtension(selectedFile);
+  const inputName = `input.${extension}`;
   await ffmpeg.writeFile(inputName, await fetchFile(selectedFile));
   return inputName;
 }
 
-async function exportOneClip(start,end,index,total){
+async function exportOneClip(inputName,start,end,index,total){
   const outputName = `clip_${String(index).padStart(2,"0")}.mp4`;
-  const duration = end-start;
+  const duration = Math.max(1,end-start);
 
   setProgress(
     8 + ((index-1)/total)*88,
@@ -172,7 +195,7 @@ async function exportOneClip(start,end,index,total){
 
   await ffmpeg.exec([
     "-ss", String(start),
-    "-i", "source_input",
+    "-i", inputName,
     "-t", String(duration),
     "-map", "0:v:0",
     "-map", "0:a?",
@@ -183,14 +206,56 @@ async function exportOneClip(start,end,index,total){
     "-c:a", "aac",
     "-b:a", "128k",
     "-movflags", "+faststart",
-    "-avoid_negative_ts", "make_zero",
+    "-y",
     outputName
   ]);
 
   const data = await ffmpeg.readFile(outputName);
-  const blob = new Blob([data.buffer], {type:"video/mp4"});
+  const blob = new Blob([data], {type:"video/mp4"});
   await ffmpeg.deleteFile(outputName);
   return URL.createObjectURL(blob);
+}
+
+async function generateClips(){
+  if(!selectedFile || !videoDuration) return;
+
+  generateBtn.disabled = true;
+  results.innerHTML = "";
+  resultsSection.classList.add("hidden");
+  clearNotice();
+
+  const log = document.getElementById("ffmpegLog");
+  if(log){ log.textContent=""; log.classList.add("hidden"); }
+
+  try{
+    const segments = buildSegments(videoDuration);
+    if(!segments.length) throw new Error("No se pudieron crear fragmentos.");
+
+    await loadFFmpeg();
+    const inputName = await writeInput();
+
+    resultsSection.classList.remove("hidden");
+    resultsSummary.textContent = `Generando ${segments.length} clips MP4 automáticamente…`;
+
+    for(let i=0;i<segments.length;i++){
+      const url = await exportOneClip(inputName,segments[i].start,segments[i].end,i+1,segments.length);
+      addClipCard(i+1,segments[i],url);
+      resultsSummary.textContent = `${i+1} de ${segments.length} clips listos.`;
+    }
+
+    try{ await ffmpeg.deleteFile(inputName); }catch(_){}
+
+    setProgress(100,"Proceso terminado","Todos los clips están listos para descargar.");
+    resultsSummary.textContent = `${segments.length} clips MP4 listos.`;
+    showNotice("Listo. Los clips se han generado como MP4 independientes.","ok");
+  }catch(error){
+    console.error(error);
+    const detail = error?.message ? ` Detalle: ${error.message}` : "";
+    showNotice("Ha fallado el conversor MP4."+detail,"error");
+    setProgress(0,"Error al generar el MP4","El detalle técnico aparece debajo si FFmpeg ha devuelto información.");
+  }finally{
+    generateBtn.disabled = false;
+  }
 }
 
 function addClipCard(index,segment,url){
@@ -213,45 +278,6 @@ function addClipCard(index,segment,url){
   });
   card.querySelector(".download").href = url;
   results.appendChild(card);
-}
-
-async function generateClips(){
-  if(!selectedFile || !videoDuration) return;
-
-  generateBtn.disabled = true;
-  results.innerHTML = "";
-  resultsSection.classList.add("hidden");
-  clearNotice();
-
-  try{
-    const segments = buildSegments(videoDuration);
-    if(!segments.length) throw new Error("No se pudieron crear fragmentos.");
-
-    await loadFFmpeg();
-    await writeInput();
-
-    resultsSection.classList.remove("hidden");
-    resultsSummary.textContent = `Generando ${segments.length} clips MP4 automáticamente…`;
-
-    const urls = [];
-    for(let i=0;i<segments.length;i++){
-      const url = await exportOneClip(segments[i].start,segments[i].end,i+1,segments.length);
-      urls.push(url);
-      addClipCard(i+1,segments[i],url);
-      resultsSummary.textContent = `${i+1} de ${segments.length} clips listos.`;
-    }
-
-    try{ await ffmpeg.deleteFile("source_input"); }catch(_){}
-    setProgress(100,"Proceso terminado","Todos los clips están listos para descargar.");
-    resultsSummary.textContent = `${segments.length} clips MP4 listos.`;
-    showNotice("Listo. Los clips se han generado como archivos MP4 independientes. Pulsa «Descargar MP4» en cualquiera.","ok");
-  }catch(error){
-    console.error(error);
-    showNotice("No se pudo generar el MP4 automáticamente. Si el vídeo es muy grande, prueba primero con un vídeo más corto o un MP4 H.264/AAC.","error");
-    setProgress(0,"Error","El procesamiento se ha detenido.");
-  }finally{
-    generateBtn.disabled = false;
-  }
 }
 
 generateBtn.addEventListener("click",generateClips);

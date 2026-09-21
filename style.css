@@ -126,3 +126,5 @@ footer{border-top:1px solid var(--line);padding:24px 5vw;display:flex;justify-co
   .how-list div{min-width:80px}.actions{justify-content:stretch}.button{width:100%}
   footer{display:block}footer span{display:block;margin:5px 0}
 }
+
+.ffmpeg-log{white-space:pre-wrap;max-height:120px;overflow:auto;margin:12px 0 0;padding:10px;background:#26231f;color:#eee7dc;font:10px/1.45 Consolas,monospace}
