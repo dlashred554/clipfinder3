@@ -13,6 +13,7 @@ const resultsSection = document.getElementById("resultsSection");
 const results = document.getElementById("results");
 const resultsSummary = document.getElementById("resultsSummary");
 const notice = document.getElementById("notice");
+const lengthPicker = document.getElementById("lengthPicker");
 
 let selectedFile = null;
 let videoDuration = 0;
@@ -116,16 +117,34 @@ function escapeHtml(s){
   Este selector crea varios fragmentos repartidos por el vídeo.
   No pretende decidir semánticamente cuál es "el mejor momento":
   esa detección inteligente requeriría un modelo de IA/backend.
-*/
-function buildSegments(duration){
-  let count, length;
-  if(duration <= 30){ count=2; length=Math.max(5, duration*0.40); }
-  else if(duration <= 90){ count=3; length=18; }
-  else if(duration <= 180){ count=4; length=25; }
-  else if(duration <= 600){ count=6; length=40; }
-  else { count=8; length=45; }
 
-  length = Math.min(length, Math.max(4, duration - 1));
+  mode "short": clips de menos de 30 s (unos 20 s)
+  mode "long":  clips de 30 a 60 s (unos 45 s)
+*/
+const CLIP_LENGTHS = { short: 20, long: 45 };
+
+function getSelectedMode(){
+  const checked = document.querySelector('input[name="clipLength"]:checked');
+  return checked && CLIP_LENGTHS[checked.value] ? checked.value : "short";
+}
+
+function buildSegments(duration, mode = "short"){
+  const target = CLIP_LENGTHS[mode] || CLIP_LENGTHS.short;
+  // Si el vídeo es más corto que la duración pedida, se usa el vídeo entero.
+  const length = Math.min(target, duration);
+
+  // Nº de clips deseado según la duración del vídeo...
+  let desired;
+  if(duration <= 90) desired = 3;
+  else if(duration <= 180) desired = 4;
+  else if(duration <= 600) desired = 6;
+  else desired = 8;
+
+  // ...limitado a los que caben sin solaparse.
+  let count = Math.max(1, Math.min(desired, Math.floor(duration / length)));
+  // Si solo cabría 1 clip pero el vídeo da para 2 con algo de solape, se generan 2.
+  if(count === 1 && desired > 1 && duration >= length * 1.5) count = 2;
+
   const usable = Math.max(0, duration - length);
   const segments = [];
   for(let i=0;i<count;i++){
@@ -251,6 +270,7 @@ async function generateClips(){
   if(!selectedFile || !videoDuration) return;
 
   generateBtn.disabled = true;
+  lengthPicker.disabled = true;
   results.innerHTML = "";
   resultsSection.classList.add("hidden");
   clearNotice();
@@ -259,7 +279,7 @@ async function generateClips(){
   if(log){ log.textContent=""; log.classList.add("hidden"); }
 
   try{
-    const segments = buildSegments(videoDuration);
+    const segments = buildSegments(videoDuration, getSelectedMode());
     if(!segments.length) throw new Error("No se pudieron crear fragmentos.");
 
     await loadFFmpeg();
@@ -286,6 +306,7 @@ async function generateClips(){
     setProgress(0,"Error al generar el MP4","El detalle técnico aparece debajo si FFmpeg ha devuelto información.");
   }finally{
     generateBtn.disabled = false;
+    lengthPicker.disabled = false;
   }
 }
 

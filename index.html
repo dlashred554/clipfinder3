@@ -47,6 +47,18 @@
 
       <video id="sourceVideo" class="source-video hidden" controls playsinline></video>
 
+      <fieldset class="length-picker" id="lengthPicker">
+        <legend>Duración de cada clip</legend>
+        <label class="length-option">
+          <input type="radio" name="clipLength" value="short" checked>
+          <span><b>Menos de 30 s</b><small>Clips de unos 20 segundos</small></span>
+        </label>
+        <label class="length-option">
+          <input type="radio" name="clipLength" value="long">
+          <span><b>De 30 a 60 s</b><small>Clips de unos 45 segundos</small></span>
+        </label>
+      </fieldset>
+
       <div class="actions">
         <button id="generateBtn" class="button button-primary" disabled>
           Generar clips automáticamente
