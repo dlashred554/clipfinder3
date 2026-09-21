@@ -169,16 +169,23 @@ async function loadFFmpeg(){
     if(/error|invalid|failed|unable|unknown/i.test(message)) addFfmpegLog(message);
   });
 
-  const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+  const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
   const localWorkerURL = new URL("./ffmpeg-worker.js", document.baseURI).href;
 
-  await ffmpeg.load({
-    // The main FFmpeg worker MUST be same-origin on GitHub Pages.
-    // The worker itself imports the official CDN worker as an ES module.
+  const loadPromise = ffmpeg.load({
+    // El worker principal debe ser del mismo origen (GitHub Pages).
     classWorkerURL: localWorkerURL,
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm")
   });
+
+  // Si falla la carga, mostramos un error en vez de quedarnos en el 3 %.
+  await Promise.race([
+    loadPromise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout cargando FFmpeg (90 s). Revisa la consola (F12).")), 90000)
+    )
+  ]);
   ffmpegReady = true;
 }
 

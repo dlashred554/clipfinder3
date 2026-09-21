@@ -18,24 +18,17 @@ let ffmpeg = null;
 
 async function loadCore(data) {
   const first = !ffmpeg;
-  let coreURL = data.coreURL;
+  const coreURL = data.coreURL;
   let wasmURL = data.wasmURL;
   let workerURL = data.workerURL;
 
-  try {
-    if (!coreURL) throw new Error("missing coreURL");
-    // coreURL is normally a blob URL created by toBlobURL().
-    importScripts(coreURL);
-  } catch (_) {
-    try {
-      if (!coreURL) throw ERROR_IMPORT_FAILURE;
-      const mod = await import(coreURL);
-      self.createFFmpegCore = mod.default;
-      if (!self.createFFmpegCore) throw ERROR_IMPORT_FAILURE;
-    } catch (e) {
-      throw e || ERROR_IMPORT_FAILURE;
-    }
-  }
+  if (!coreURL) throw ERROR_IMPORT_FAILURE;
+
+  // Este worker se ejecuta como módulo (importScripts no existe),
+  // así que el núcleo debe ser la versión ESM (export default).
+  const mod = await import(coreURL);
+  self.createFFmpegCore = mod.default;
+  if (!self.createFFmpegCore) throw ERROR_IMPORT_FAILURE;
 
   if (!wasmURL) wasmURL = coreURL.replace(/\.js$/g, ".wasm");
   if (!workerURL) workerURL = coreURL.replace(/\.js$/g, ".worker.js");
