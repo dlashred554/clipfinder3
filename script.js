@@ -118,18 +118,18 @@ function escapeHtml(s){
   No pretende decidir semánticamente cuál es "el mejor momento":
   esa detección inteligente requeriría un modelo de IA/backend.
 
-  mode "short": clips de menos de 30 s (unos 20 s)
-  mode "long":  clips de 30 a 60 s (unos 45 s)
+  Duraciones disponibles (segundos): 15 y 25 (menos de 30 s),
+  40 y 60 (de 30 a 60 s). Se cambian en el HTML (value de cada opción).
 */
-const CLIP_LENGTHS = { short: 20, long: 45 };
+const DEFAULT_CLIP_LENGTH = 25;
 
-function getSelectedMode(){
+function getSelectedLength(){
   const checked = document.querySelector('input[name="clipLength"]:checked');
-  return checked && CLIP_LENGTHS[checked.value] ? checked.value : "short";
+  const value = checked ? Number(checked.value) : DEFAULT_CLIP_LENGTH;
+  return Number.isFinite(value) && value >= 3 ? value : DEFAULT_CLIP_LENGTH;
 }
 
-function buildSegments(duration, mode = "short"){
-  const target = CLIP_LENGTHS[mode] || CLIP_LENGTHS.short;
+function buildSegments(duration, target = DEFAULT_CLIP_LENGTH){
   // Si el vídeo es más corto que la duración pedida, se usa el vídeo entero.
   const length = Math.min(target, duration);
 
@@ -279,7 +279,7 @@ async function generateClips(){
   if(log){ log.textContent=""; log.classList.add("hidden"); }
 
   try{
-    const segments = buildSegments(videoDuration, getSelectedMode());
+    const segments = buildSegments(videoDuration, getSelectedLength());
     if(!segments.length) throw new Error("No se pudieron crear fragmentos.");
 
     await loadFFmpeg();
