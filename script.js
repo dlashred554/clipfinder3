@@ -529,7 +529,9 @@ function renderClip(index, segment, fmt, onProgress){
       // No usa la antigua curva que terminaba clavada en 97 %.
       const progressStarted = Date.now();
       const progressTimer = setInterval(() => {
-        if(realProgressSeen) return;
+        // Aunque FFmpeg haya enviado progreso real, puede dejar de emitir
+        // eventos durante una fase larga. El reloj visual evita que la UI
+        // quede clavada en 90 %. Nunca supera el 96 % hasta que exec termina.
         const elapsed = Date.now() - progressStarted;
         // Límite visual justo por debajo del 100 %: la exportación real
         // sigue mandando y al terminar saltamos a 98/100 %. No se queda en 90 %.
@@ -537,10 +539,6 @@ function renderClip(index, segment, fmt, onProgress){
         if(visual > lastProgress){
           lastProgress = visual;
           onProgress(visual);
-        }
-        // Cuando no hay progreso real, dejamos claro que FFmpeg sigue trabajando.
-        if(!realProgressSeen && lastProgress >= 0.85){
-          onProgress(lastProgress);
         }
       }, 400);
 
