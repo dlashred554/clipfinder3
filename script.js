@@ -42,7 +42,7 @@ let previewStop = null;
 let reactionFile = null;
 let reactionInputPromise = null;  // reacción ya escrita en la memoria de FFmpeg
 let reactionInputName = null;
-const REACTION_HEIGHT_RATIO = 0.4; // proporción de la altura total que ocupa la reacción
+const REACTION_HEIGHT_RATIO = 0.33; // proporción de la altura total que ocupa la reacción
 
 // Altura máxima de los clips en modo "Original". Bájala (p. ej. 540) para ir más rápido.
 const MAX_HEIGHT = 720;
@@ -56,7 +56,7 @@ function enqueue(fn){
 }
 
 const FORMATS = {
-  "9x16": {w:540, h:960, label:"9:16"}
+  "9x16": {w:360, h:640, label:"9:16"}
 };
 
 function getDownloadFormat(){
@@ -458,7 +458,7 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
     "-t", String(duration),
     "-filter_complex", filter,
     "-map", "[v]", "-map", "0:a?",
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "32",
     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
     "-y", output
   ];
@@ -516,13 +516,13 @@ function renderClip(index, segment, fmt, onProgress){
       const progressTimer = setInterval(() => {
         if(realProgressSeen) return;
         const elapsed = Date.now() - progressStarted;
-        const visual = Math.min(0.95, 0.05 + (elapsed / 35000) * 0.90);
+        const visual = Math.min(0.90, 0.05 + (elapsed / 30000) * 0.85);
         if(visual > lastProgress){
           lastProgress = visual;
           onProgress(visual);
         }
         // Cuando no hay progreso real, dejamos claro que FFmpeg sigue trabajando.
-        if(!realProgressSeen && lastProgress >= 0.90){
+        if(!realProgressSeen && lastProgress >= 0.85){
           onProgress(lastProgress);
         }
       }, 400);
@@ -562,7 +562,7 @@ function renderClip(index, segment, fmt, onProgress){
       if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
 
       // FFmpeg ya terminó; ahora leemos el MP4 generado.
-      onProgress(0.99);
+      onProgress(0.98);
       const data = await ffmpeg.readFile(output);
       await ffmpeg.deleteFile(output);
       const url = URL.createObjectURL(new Blob([data], {type:"video/mp4"}));
