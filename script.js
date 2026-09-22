@@ -57,7 +57,7 @@ function enqueue(fn){
 
 const FORMATS = {
   "original": {label:"Original"},
-  "9x16": {w:720,  h:1280, label:"9:16"},
+  "9x16": {w:540,  h:960, label:"9:16"},
   "16x9": {w:1280, h:720, label:"16:9"}
 };
 
@@ -448,7 +448,7 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
     return [
       "-ss", String(start), "-i", input, "-t", String(duration),
       "-filter_complex", filter, "-map", "[v]", "-map", "0:a?",
-      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
       "-y", output
     ];
