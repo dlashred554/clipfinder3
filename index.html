@@ -69,22 +69,22 @@
 
       <div class="reaction-box" id="reactionBox">
         <label class="reaction-toggle">
-          <input type="checkbox" id="reactionEnable">
+          <input type="checkbox" id="reactionEnable" checked>
           <span>
-            <b>Añadir reacción encima (opcional)</b>
-            <small>Superpone una imagen o vídeo en la franja superior del clip. Debajo se mantiene el vídeo con fondo desenfocado, igual que en 9:16 / 16:9.</small>
+            <b>Vídeo de reacción arriba</b>
+            <small>Se utiliza siempre un vídeo de reacción en la franja superior. Debajo se mantiene el vídeo con fondo desenfocado.</small>
           </span>
         </label>
 
         <div class="reaction-upload hidden" id="reactionUpload">
           <label class="reaction-filebtn" for="reactionInput">
-            <span id="reactionFileLabel">Elegir imagen o vídeo…</span>
-            <input id="reactionInput" type="file" accept="image/*,video/mp4,video/quicktime,video/webm">
+            <span id="reactionFileLabel">Elegir vídeo de reacción…</span>
+            <input id="reactionInput" type="file" accept="video/mp4,video/quicktime,video/webm,video/*">
           </label>
           <button type="button" id="reactionClear" class="button button-secondary hidden">Quitar</button>
         </div>
 
-        <p class="reaction-note">Solo se aplica al descargar en formato 9:16 o 16:9 (no en “Original”, que no recodifica).</p>
+        <p class="reaction-note">Formato fijo: 9:16 vertical para TikTok y YouTube Shorts · fondo desenfocado + reacción arriba.</p>
       </div>
 
       <div class="actions">
@@ -99,7 +99,7 @@
           <span id="progressPercent">0%</span>
         </div>
         <div class="progress-track"><div id="progressBar"></div></div>
-        <p id="progressDetail">En “Original” se usa copia directa para acelerar al máximo.</p><pre id="ffmpegLog" class="ffmpeg-log hidden"></pre>
+        <p id="progressDetail">Exportación 9:16 optimizada para TikTok y YouTube Shorts.</p><pre id="ffmpegLog" class="ffmpeg-log hidden"></pre>
       </div>
     </section>
 
@@ -111,21 +111,7 @@
         </div>
         <span class="step">02</span>
       </div>
-      <fieldset class="length-picker format-picker" id="formatPicker">
-        <legend>Formato al descargar</legend>
-        <label class="length-option">
-          <input type="radio" name="downloadFormat" value="original" checked>
-          <span><b>Original</b><small>Sin recodificar · más rápido</small></span>
-        </label>
-        <label class="length-option">
-          <input type="radio" name="downloadFormat" value="9x16">
-          <span><b>9:16</b><small>Vertical · fondo desenfocado</small></span>
-        </label>
-        <label class="length-option">
-          <input type="radio" name="downloadFormat" value="16x9">
-          <span><b>16:9</b><small>Horizontal · fondo desenfocado</small></span>
-        </label>
-      </fieldset>
+      <div class="format-fixed"><b>Formato: 9:16 vertical</b><small>TikTok y YouTube Shorts · fondo desenfocado + reacción arriba</small></div>
 
       <div id="results" class="results-grid"></div>
     </section>
