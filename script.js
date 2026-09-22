@@ -58,7 +58,7 @@ function enqueue(fn){
 const FORMATS = {
   "original": {label:"Original"},
   "9x16": {w:720,  h:1280, label:"9:16"},
-  "16x9": {w:1280, h:720,  label:"16:9"}
+  "16x9": {w:1280, h:720, label:"16:9"}
 };
 
 function getDownloadFormat(){
@@ -180,9 +180,9 @@ function updateFormatAvailability(){
 
 function setReactionFile(file){
   if(file){
-    const okType = file.type.startsWith("image/") || file.type.startsWith("video/");
+    const okType = file.type.startsWith("video/");
     if(!okType){
-      showNotice("El archivo de reacción debe ser una imagen o un vídeo.","error");
+      showNotice("La reacción debe ser un vídeo.","error");
       return;
     }
   }
@@ -369,7 +369,7 @@ function ensureReactionInput(){
   if(!reactionFile) return Promise.resolve(null);
   if(!reactionInputPromise){
     const file = reactionFile;
-    const isImage = file.type.startsWith("image/");
+    const isImage = false;
     reactionInputPromise = (async () => {
       await ensureEngine();
       const name = `reaction.${getReactionExtension(file)}`;
@@ -472,9 +472,7 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
 
   // La reacción no tiene por qué durar lo mismo que el clip:
   // una imagen se mantiene fija todo el clip, un vídeo se repite en bucle si hace falta.
-  const reactionInputArgs = reaction.isImage
-    ? ["-loop", "1", "-t", String(duration), "-i", reaction.name]
-    : ["-stream_loop", "-1", "-i", reaction.name];
+  const reactionInputArgs = ["-stream_loop", "-1", "-i", reaction.name];
 
   return [
     "-ss", String(start), "-i", input,
@@ -683,7 +681,9 @@ function addClipCard(index,segment){
   dl.addEventListener("click", async () => {
     if(dl.classList.contains("is-busy")) return;
 
-    const fmt = getDownloadFormat();
+    let fmt = getDownloadFormat();
+    // Flujo de producción: reacción siempre en vídeo y salida siempre 9:16.
+    if(reactionFile) fmt = "9x16";
     const fmtLabel = fmt === "original" ? "Original · rápido" : FORMATS[fmt].label;
     dl.classList.add("is-busy");
     dl.textContent = outputCache.has(`${index}-${fmt}`) ? "Descargando…" : "En cola…";
