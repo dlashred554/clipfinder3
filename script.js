@@ -46,6 +46,9 @@ const REACTION_HEIGHT_RATIO = 0.4; // proporción de la altura total que ocupa l
 // Altura máxima de los clips en modo "Original". Bájala (p. ej. 540) para ir más rápido.
 const MAX_HEIGHT = 720;
 
+// Límite para evitar que una exportación quede bloqueada indefinidamente.
+const EXPORT_TIMEOUT_MS = 180000;
+
 // Todas las operaciones de FFmpeg pasan por una cola: así nunca se mezclan
 // la generación de clips y las conversiones de formato al descargar.
 function enqueue(fn){
@@ -290,7 +293,14 @@ async function loadFFmpeg(){
       ? (time / 1e6) / currentJob.duration
       : progress;
     if(!Number.isFinite(p)) return;
-    currentJob.onProgress(Math.max(0, Math.min(1, p)));
+    const safeP = Math.max(0, Math.min(1, p));
+    console.log("[ClipFinder FFmpeg] progreso real:", {
+      progress: Number.isFinite(progress) ? progress : null,
+      timeMicroseconds: Number.isFinite(time) ? time : null,
+      durationSeconds: currentJob.duration,
+      percent: Math.round(safeP * 100)
+    });
+    currentJob.onProgress(safeP);
   });
 
   const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
@@ -539,7 +549,17 @@ function renderClip(index, segment, fmt, onProgress){
 
       let code;
       try{
-        code = await ffmpeg.exec(buildExportArgs(fmt, segment.start, duration, input, output, reaction));
+        const exportArgs = buildExportArgs(fmt, segment.start, duration, input, output, reaction);
+        console.log("[ClipFinder FFmpeg] iniciando exportación:", {
+          clip: index,
+          formato: fmt,
+          inicio: segment.start,
+          duracion: duration,
+          timeoutMs: EXPORT_TIMEOUT_MS
+        });
+        addFfmpegLog(`Iniciando FFmpeg · clip ${index} · ${fmt} · límite ${EXPORT_TIMEOUT_MS / 1000}s`);
+        code = await ffmpeg.exec(exportArgs, EXPORT_TIMEOUT_MS);
+        console.log("[ClipFinder FFmpeg] exec terminó con código:", code);
       }finally{
         clearInterval(progressTimer);
       }
