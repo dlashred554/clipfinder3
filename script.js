@@ -510,18 +510,42 @@ function renderClip(index, segment, fmt, onProgress){
 
     currentJob = {kind:"export", duration, onProgress};
     try{
-      // Progreso real únicamente. No simulamos un 97% que pueda ocultar un bloqueo.
-      let lastProgress = 0;
+      // FFmpeg no siempre emite progreso útil con -c copy (Original).
+      // Los eventos iniciales de 0 % NO cuentan como progreso real.
+      // La barra avanza suavemente mientras FFmpeg trabaja y salta a 99 %
+      // únicamente cuando FFmpeg ha terminado de verdad.
+      let lastProgress = 0.05;
+      let realProgressSeen = false;
       const reportProgress = p => {
         p = Number(p);
         if(!Number.isFinite(p)) return;
-        p = Math.max(lastProgress, Math.min(1, p));
-        lastProgress = p;
-        onProgress(p);
-        console.log("[ClipFinder FFmpeg] progreso real:", Math.round(p * 100) + "%");
+
+        // Ignorar eventos iniciales 0 % / valores demasiado pequeños.
+        // Así no se bloquea la barra en 5 %.
+        if(p > 0.02){
+          realProgressSeen = true;
+          p = Math.max(lastProgress, Math.min(0.98, p));
+          lastProgress = p;
+          onProgress(p);
+          console.log("[ClipFinder FFmpeg] progreso real:", Math.round(p * 100) + "%");
+        }
       };
-      onProgress(0.01);
+
+      onProgress(lastProgress);
       currentJob.onProgress = reportProgress;
+
+      // Respaldo visual solo cuando FFmpeg no proporciona progreso útil.
+      // No usa la antigua curva que terminaba clavada en 97 %.
+      const progressStarted = Date.now();
+      const progressTimer = setInterval(() => {
+        if(realProgressSeen) return;
+        const elapsed = Date.now() - progressStarted;
+        const visual = Math.min(0.90, 0.05 + (elapsed / 120000) * 0.85);
+        if(visual > lastProgress){
+          lastProgress = visual;
+          onProgress(visual);
+        }
+      }, 400);
 
       const exportArgs = buildExportArgs(fmt, segment.start, duration, input, output, reaction);
       console.log("[ClipFinder FFmpeg] iniciando exportación", {
@@ -566,6 +590,7 @@ function renderClip(index, segment, fmt, onProgress){
       outputCache.set(key, url);
       return url;
     }finally{
+      clearInterval(progressTimer);
       currentJob = {kind:"none"};
     }
   });
