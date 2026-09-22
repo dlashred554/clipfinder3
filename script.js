@@ -276,7 +276,7 @@ async function loadFFmpeg(){
     // sí suele incluir "time=HH:MM:SS.xx", así que lo usamos como respaldo
     // REAL para que la barra no se quede clavada en 90 %.
     if(currentJob.kind === "export" && currentJob.duration){
-      const m = String(message).match(/time=(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)/);
+      const m = String(message).match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
       if(m){
         const elapsed = Number(m[1])*3600 + Number(m[2])*60 + Number(m[3]);
         if(Number.isFinite(elapsed) && elapsed >= 0){
