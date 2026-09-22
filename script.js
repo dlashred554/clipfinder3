@@ -423,6 +423,7 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
       "-map", "0:v:0",
       "-map", "0:a?",
       "-c", "copy",
+      "-avoid_negative_ts", "make_zero",
       "-y", output
     ];
   }
@@ -449,7 +450,7 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
       "-filter_complex", filter, "-map", "[v]", "-map", "0:a?",
       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
-      "-y", output
+      "-movflags", "+faststart", "-y", output
     ];
   }
 
@@ -483,7 +484,7 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
     "-map", "[v]", "-map", "0:a?",
     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
-    "-y", output
+    "-movflags", "+faststart", "-y", output
   ];
 }
 function cancelledError(){
@@ -508,26 +509,21 @@ function renderClip(index, segment, fmt, onProgress){
     const duration = Math.max(1, segment.end - segment.start);
 
     currentJob = {kind:"export", duration, onProgress};
+    let progressTimer = null;
     try{
-      // Para Original (-c copy) FFmpeg puede no emitir progreso fino.
-      // Mantenemos el último porcentaje real sin volver atrás y dejamos
-      // el tramo final para la lectura del MP4, evitando el falso 94 %.
-      let lastProgress = 0;
-      const reportProgress = p => {
-        p = Number(p);
-        if(!Number.isFinite(p)) return;
-        p = Math.max(lastProgress, Math.min(0.97, p));
-        lastProgress = p;
-        onProgress(p);
-      };
-      onProgress(0.01);
-      currentJob.onProgress = reportProgress;
+      // FFmpeg.wasm no siempre emite eventos de progreso al usar -c copy.
+      // Mostramos avance visual desde el principio para que nunca parezca bloqueado en 0 %.
+      let visualProgress = 0.02;
+      onProgress(visualProgress);
+      progressTimer = setInterval(() => {
+        visualProgress = Math.min(0.94, visualProgress + (fmt === "original" ? 0.018 : 0.008));
+        onProgress(visualProgress);
+      }, 180);
 
       const code = await ffmpeg.exec(buildExportArgs(fmt, segment.start, duration, input, output, reaction));
       if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
-
-      // El trabajo de FFmpeg ya terminó: ahora solo queda copiar el archivo
-      // desde la memoria del navegador y crear el enlace de descarga.
+      if(progressTimer) clearInterval(progressTimer);
+      progressTimer = null;
       onProgress(0.98);
       const data = await ffmpeg.readFile(output);
       await ffmpeg.deleteFile(output);
