@@ -423,7 +423,6 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
       "-map", "0:v:0",
       "-map", "0:a?",
       "-c", "copy",
-      "-avoid_negative_ts", "make_zero",
       "-y", output
     ];
   }
@@ -516,7 +515,7 @@ function renderClip(index, segment, fmt, onProgress){
       let visualProgress = 0.02;
       onProgress(visualProgress);
       progressTimer = setInterval(() => {
-        visualProgress = Math.min(0.94, visualProgress + (fmt === "original" ? 0.018 : 0.008));
+        visualProgress = Math.min(0.99, visualProgress + (fmt === "original" ? 0.024 : 0.008));
         onProgress(visualProgress);
       }, 180);
 
