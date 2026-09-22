@@ -270,6 +270,21 @@ async function loadFFmpeg(){
 
   ffmpeg.on("log", ({message}) => {
     console.log("[ClipFinder FFmpeg]", message);
+
+    // FFmpeg.wasm declara el progreso como experimental y en algunas
+    // exportaciones el evento "progress" no avanza. El propio log de FFmpeg
+    // sí suele incluir "time=HH:MM:SS.xx", así que lo usamos como respaldo
+    // REAL para que la barra no se quede clavada en 90 %.
+    if(currentJob.kind === "export" && currentJob.duration){
+      const m = String(message).match(/time=(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)/);
+      if(m){
+        const elapsed = Number(m[1])*3600 + Number(m[2])*60 + Number(m[3]);
+        if(Number.isFinite(elapsed) && elapsed >= 0){
+          currentJob.onProgress(Math.max(0, Math.min(0.98, elapsed / currentJob.duration)));
+        }
+      }
+    }
+
     if(/error|invalid|failed|unable|unknown|no such|not supported/i.test(message)) addFfmpegLog(message);
   });
 
@@ -516,7 +531,9 @@ function renderClip(index, segment, fmt, onProgress){
       const progressTimer = setInterval(() => {
         if(realProgressSeen) return;
         const elapsed = Date.now() - progressStarted;
-        const visual = Math.min(0.90, 0.05 + (elapsed / 30000) * 0.85);
+        // Límite visual justo por debajo del 100 %: la exportación real
+        // sigue mandando y al terminar saltamos a 98/100 %. No se queda en 90 %.
+        const visual = Math.min(0.96, 0.05 + (elapsed / 33000) * 0.91);
         if(visual > lastProgress){
           lastProgress = visual;
           onProgress(visual);
