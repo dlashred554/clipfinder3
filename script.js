@@ -56,7 +56,7 @@ function enqueue(fn){
 }
 
 const FORMATS = {
-  "9x16": {w:360, h:640, label:"9:16"}
+  "9x16": {w:540, h:960, label:"9:16"}
 };
 
 function getDownloadFormat(){
@@ -458,7 +458,7 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
     "-t", String(duration),
     "-filter_complex", filter,
     "-map", "[v]", "-map", "0:a?",
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "32",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
     "-y", output
   ];
