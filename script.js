@@ -35,7 +35,7 @@ let inputPromise = null;          // vídeo original ya escrito en la memoria de
 let inputName = null;
 let outputToken = 0;              // cambia al generar de nuevo o al subir otro vídeo
 const outputCache = new Map();
-const EXPORT_TIMEOUT_MS = 35000; // objetivo: menos de 36 s por clip para superar 100 clips/hora    // "clip-formato" -> URL del MP4 ya convertido
+const EXPORT_TIMEOUT_MS = 120000; // margen real para que FFmpeg termine incluso en vídeos pesados    // "clip-formato" -> URL del MP4 ya convertido
 let previewStop = null;
 
 // Reacción opcional superpuesta en la franja superior del clip (imagen o vídeo).
@@ -535,7 +535,7 @@ function renderClip(index, segment, fmt, onProgress){
         const elapsed = Date.now() - progressStarted;
         // Límite visual justo por debajo del 100 %: la exportación real
         // sigue mandando y al terminar saltamos a 98/100 %. No se queda en 90 %.
-        const visual = Math.min(0.96, 0.05 + (elapsed / 33000) * 0.91);
+        const visual = Math.min(0.96, 0.05 + (elapsed / 120000) * 0.91);
         if(visual > lastProgress){
           lastProgress = visual;
           onProgress(visual);
@@ -557,19 +557,19 @@ function renderClip(index, segment, fmt, onProgress){
         execPromise.catch(() => {});
         code = await Promise.race([
           execPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error("FFmpeg ha tardado más de 35 segundos y se ha detenido para mantener un ritmo rápido de exportación.")), EXPORT_TIMEOUT_MS + 1000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error("FFmpeg ha tardado más de 120 segundos y se ha detenido.")), EXPORT_TIMEOUT_MS + 1000))
         ]);
       } catch (error) {
-        const timedOut = /más de 35 segundos|timeout|timed out/i.test(error?.message || "");
+        const timedOut = /más de 120 segundos|timeout|timed out/i.test(error?.message || "");
         if (timedOut) {
-          addFfmpegLog("FFmpeg no respondió dentro del límite. Reiniciando el motor…");
+          addFfmpegLog("FFmpeg no respondió dentro del límite de 120 segundos. Reiniciando el motor…");
           try { ffmpeg?.terminate(); } catch (_) {}
           ffmpeg = null;
           ffmpegReady = false;
           enginePromise = null;
           inputPromise = null;
           inputName = null;
-          throw new Error("FFmpeg se ha detenido porque llevaba más de 35 segundos. Pulsa Descargar de nuevo para reintentarlo.");
+          throw new Error("FFmpeg se ha detenido porque llevaba más de 120 segundos. Pulsa Descargar de nuevo para reintentarlo.");
         }
         throw error;
       }
