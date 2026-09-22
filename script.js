@@ -523,7 +523,24 @@ function renderClip(index, segment, fmt, onProgress){
       onProgress(0.01);
       currentJob.onProgress = reportProgress;
 
-      const code = await ffmpeg.exec(buildExportArgs(fmt, segment.start, duration, input, output, reaction));
+      // Progreso simulado de respaldo: en "Original" (-c copy) FFmpeg casi
+      // nunca emite eventos de progreso reales, así que sin esto la barra
+      // se queda parada hasta que termina de golpe. Avanza solo poco a poco
+      // sin llegar al final; si llegan datos reales de FFmpeg, ganan ellos
+      // porque reportProgress nunca retrocede (Math.max con lastProgress).
+      const simStart = Date.now();
+      const estimatedMs = Math.max(1200, duration * (fmt === "original" ? 60 : 350));
+      const progressTimer = setInterval(() => {
+        const elapsed = Date.now() - simStart;
+        reportProgress(Math.min(0.9, elapsed / estimatedMs));
+      }, 200);
+
+      let code;
+      try{
+        code = await ffmpeg.exec(buildExportArgs(fmt, segment.start, duration, input, output, reaction));
+      }finally{
+        clearInterval(progressTimer);
+      }
       if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
 
       // El trabajo de FFmpeg ya terminó: ahora solo queda copiar el archivo
