@@ -63,7 +63,7 @@ const FORMATS = {
 
 function getDownloadFormat(){
   const checked = document.querySelector('input[name="downloadFormat"]:checked');
-  return checked && FORMATS[checked.value] ? checked.value : "original";
+  return "9x16";
 }
 
 function formatTime(seconds){
@@ -502,7 +502,7 @@ function renderClip(index, segment, fmt, onProgress){
     if(outputCache.has(key)) return outputCache.get(key);
 
     const input = await ensureInput();
-    const reaction = (fmt !== "original" && reactionFile) ? await ensureReactionInput() : null;
+    const reaction = reactionFile ? await ensureReactionInput() : null;
     const output = `out_${index}_${fmt}.mp4`;
     const duration = Math.max(1, segment.end - segment.start);
 
@@ -684,7 +684,7 @@ function addClipCard(index,segment){
     let fmt = getDownloadFormat();
     // Flujo de producción: reacción siempre en vídeo y salida siempre 9:16.
     if(reactionFile) fmt = "9x16";
-    const fmtLabel = fmt === "original" ? "Original · rápido" : FORMATS[fmt].label;
+    const fmtLabel = FORMATS[fmt].label;
     dl.classList.add("is-busy");
     dl.textContent = outputCache.has(`${index}-${fmt}`) ? "Descargando…" : "En cola…";
 
