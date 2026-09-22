@@ -56,13 +56,10 @@ function enqueue(fn){
 }
 
 const FORMATS = {
-  "original": {label:"Original"},
-  "9x16": {w:540,  h:960, label:"9:16"},
-  "16x9": {w:1280, h:720, label:"16:9"}
+  "9x16": {w:540, h:960, label:"9:16"}
 };
 
 function getDownloadFormat(){
-  const checked = document.querySelector('input[name="downloadFormat"]:checked');
   return "9x16";
 }
 
@@ -166,16 +163,8 @@ function escapeHtml(s){
 /* ---------- Reacción opcional (imagen/vídeo superpuesto arriba) ---------- */
 
 function updateFormatAvailability(){
-  const originalRadio = document.querySelector('input[name="downloadFormat"][value="original"]');
-  if(!originalRadio) return;
-  const active = !!reactionFile;
-  originalRadio.disabled = active;
-  const wrap = originalRadio.closest(".length-option");
-  if(wrap) wrap.classList.toggle("is-disabled", active);
-  if(active && originalRadio.checked){
-    const alt = document.querySelector('input[name="downloadFormat"][value="9x16"]');
-    if(alt) alt.checked = true;
-  }
+  const hasReaction = !!reactionFile;
+  generateBtn.disabled = !selectedFile || !videoDuration || !hasReaction;
 }
 
 function setReactionFile(file){
@@ -189,7 +178,7 @@ function setReactionFile(file){
   reactionFile = file || null;
   resetReactionInput();
   clearOutputs();
-  reactionFileLabel.textContent = file ? file.name : "Elegir imagen o vídeo…";
+  reactionFileLabel.textContent = file ? file.name : "Elegir vídeo de reacción…";
   reactionClear.classList.toggle("hidden", !file);
   updateFormatAvailability();
 }
@@ -197,7 +186,9 @@ function setReactionFile(file){
 reactionEnable.addEventListener("change", () => {
   reactionUpload.classList.toggle("hidden", !reactionEnable.checked);
   if(!reactionEnable.checked && reactionFile) setReactionFile(null);
+  updateFormatAvailability();
 });
+reactionUpload.classList.toggle("hidden", !reactionEnable.checked);
 
 reactionInput.addEventListener("change", e => setReactionFile(e.target.files[0]));
 
@@ -414,21 +405,8 @@ function warmUp(){
 /* ---------- Exportación de un clip ---------- */
 
 function buildExportArgs(fmt, start, duration, input, output, reaction){
-  // ORIGINAL: copia directa, sin recodificar. Es la ruta mas rapida.
-  // (La reacción no se aplica aquí: al no recodificar no se puede superponer nada.)
-  if(fmt === "original"){
-    return [
-      "-ss", String(start),
-      "-i", input,
-      "-t", String(duration),
-      "-map", "0:v:0",
-      "-map", "0:a?",
-      "-c", "copy",
-      "-y", output
-    ];
-  }
-
-  // Los formatos vertical/horizontal necesitan recodificacion.
+  // La salida de producción es siempre vertical 9:16 y se recodifica para
+  // colocar la reacción arriba y el vídeo principal debajo.
   const {w:W,h:H} = FORMATS[fmt];
   const srcAspect = videoWidth && videoHeight ? videoWidth/videoHeight : 16/9;
 
@@ -502,7 +480,7 @@ function renderClip(index, segment, fmt, onProgress){
     if(outputCache.has(key)) return outputCache.get(key);
 
     const input = await ensureInput();
-    const reaction = reactionFile ? await ensureReactionInput() : null;
+    const reaction = await ensureReactionInput();
     const output = `out_${index}_${fmt}.mp4`;
     const duration = Math.max(1, segment.end - segment.start);
 
@@ -631,9 +609,7 @@ function generateClips(){
   // El MP4 se crea al pulsar "Descargar", ya en el formato elegido.
   segments.forEach((seg,i) => addClipCard(i+1, seg));
   resultsSection.classList.remove("hidden");
-  resultsSummary.textContent = reactionFile
-    ? `${segments.length} clips listos. Con reacción activa, descarga en 9:16 o 16:9 para verla.`
-    : `${segments.length} clips listos. Elige el formato y pulsa Descargar.`;
+  resultsSummary.textContent = `${segments.length} clips listos. Salida fija 9:16 con vídeo de reacción arriba.`;
   showNotice("Listo. Previsualiza los clips y descarga los que quieras; el MP4 se genera al descargar.","ok");
   resultsSection.scrollIntoView({behavior:"smooth", block:"start"});
 
@@ -683,7 +659,6 @@ function addClipCard(index,segment){
 
     let fmt = getDownloadFormat();
     // Flujo de producción: reacción siempre en vídeo y salida siempre 9:16.
-    if(reactionFile) fmt = "9x16";
     const fmtLabel = FORMATS[fmt].label;
     dl.classList.add("is-busy");
     dl.textContent = outputCache.has(`${index}-${fmt}`) ? "Descargando…" : "En cola…";
