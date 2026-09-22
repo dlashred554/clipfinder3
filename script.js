@@ -35,7 +35,7 @@ let inputPromise = null;          // vídeo original ya escrito en la memoria de
 let inputName = null;
 let outputToken = 0;              // cambia al generar de nuevo o al subir otro vídeo
 const outputCache = new Map();
-const EXPORT_TIMEOUT_MS = 120000; // 2 minutos por exportación    // "clip-formato" -> URL del MP4 ya convertido
+const EXPORT_TIMEOUT_MS = 180000; // 3 minutos por exportación    // "clip-formato" -> URL del MP4 ya convertido
 let previewStop = null;
 
 // Reacción opcional superpuesta en la franja superior del clip (imagen o vídeo).
@@ -510,7 +510,7 @@ function renderClip(index, segment, fmt, onProgress){
 
     currentJob = {kind:"export", duration, onProgress};
     try{
-      // FFmpeg no siempre emite progreso útil con -c copy (Original).
+      // FFmpeg puede emitir progreso poco fiable con algunas exportaciones.
       // Los eventos iniciales de 0 % NO cuentan como progreso real.
       // La barra avanza suavemente mientras FFmpeg trabaja y salta a 99 %
       // únicamente cuando FFmpeg ha terminado de verdad.
@@ -540,7 +540,7 @@ function renderClip(index, segment, fmt, onProgress){
       const progressTimer = setInterval(() => {
         if(realProgressSeen) return;
         const elapsed = Date.now() - progressStarted;
-        const visual = Math.min(0.97, 0.05 + (elapsed / 120000) * 0.92);
+        const visual = Math.min(0.95, 0.05 + (elapsed / 180000) * 0.90);
         if(visual > lastProgress){
           lastProgress = visual;
           onProgress(visual);
