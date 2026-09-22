@@ -516,14 +516,13 @@ function renderClip(index, segment, fmt, onProgress){
       const progressTimer = setInterval(() => {
         if(realProgressSeen) return;
         const elapsed = Date.now() - progressStarted;
-        const visual = Math.min(0.95, 0.05 + (elapsed / 180000) * 0.90);
+        const visual = Math.min(0.95, 0.05 + (elapsed / 35000) * 0.90);
         if(visual > lastProgress){
           lastProgress = visual;
           onProgress(visual);
         }
         // Cuando no hay progreso real, dejamos claro que FFmpeg sigue trabajando.
         if(!realProgressSeen && lastProgress >= 0.90){
-          // No es un porcentaje real: evita dar sensación de bloqueo en 90 %.
           onProgress(lastProgress);
         }
       }, 400);
