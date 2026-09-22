@@ -34,7 +34,8 @@ let enginePromise = null;         // carga del motor (una sola vez)
 let inputPromise = null;          // vídeo original ya escrito en la memoria de FFmpeg
 let inputName = null;
 let outputToken = 0;              // cambia al generar de nuevo o al subir otro vídeo
-const outputCache = new Map();    // "clip-formato" -> URL del MP4 ya convertido
+const outputCache = new Map();
+const EXPORT_TIMEOUT_MS = 120000; // 2 minutos por exportación    // "clip-formato" -> URL del MP4 ya convertido
 let previewStop = null;
 
 // Reacción opcional superpuesta en la franja superior del clip (imagen o vídeo).
@@ -45,9 +46,6 @@ const REACTION_HEIGHT_RATIO = 0.4; // proporción de la altura total que ocupa l
 
 // Altura máxima de los clips en modo "Original". Bájala (p. ej. 540) para ir más rápido.
 const MAX_HEIGHT = 720;
-
-// Límite para evitar que una exportación quede bloqueada indefinidamente.
-const EXPORT_TIMEOUT_MS = 180000;
 
 // Todas las operaciones de FFmpeg pasan por una cola: así nunca se mezclan
 // la generación de clips y las conversiones de formato al descargar.
@@ -293,14 +291,7 @@ async function loadFFmpeg(){
       ? (time / 1e6) / currentJob.duration
       : progress;
     if(!Number.isFinite(p)) return;
-    const safeP = Math.max(0, Math.min(1, p));
-    console.log("[ClipFinder FFmpeg] progreso real:", {
-      progress: Number.isFinite(progress) ? progress : null,
-      timeMicroseconds: Number.isFinite(time) ? time : null,
-      durationSeconds: currentJob.duration,
-      percent: Math.round(safeP * 100)
-    });
-    currentJob.onProgress(safeP);
+    currentJob.onProgress(Math.max(0, Math.min(1, p)));
   });
 
   const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
@@ -519,55 +510,55 @@ function renderClip(index, segment, fmt, onProgress){
 
     currentJob = {kind:"export", duration, onProgress};
     try{
-      // Para Original (-c copy) FFmpeg puede no emitir progreso fino.
-      // Mantenemos el último porcentaje real sin volver atrás y dejamos
-      // el tramo final para la lectura del MP4, evitando el falso 94 %.
+      // Progreso real únicamente. No simulamos un 97% que pueda ocultar un bloqueo.
       let lastProgress = 0;
       const reportProgress = p => {
         p = Number(p);
         if(!Number.isFinite(p)) return;
-        p = Math.max(lastProgress, Math.min(0.97, p));
+        p = Math.max(lastProgress, Math.min(1, p));
         lastProgress = p;
         onProgress(p);
+        console.log("[ClipFinder FFmpeg] progreso real:", Math.round(p * 100) + "%");
       };
       onProgress(0.01);
       currentJob.onProgress = reportProgress;
 
-      // Progreso simulado de respaldo: FFmpeg (sobre todo en "Original",
-      // con -c copy) puede no emitir eventos de progreso reales, y la
-      // recodificación en el navegador a veces tarda más de lo previsto.
-      // Usamos una curva que se acerca al 97% sin tope fijo: nunca se para
-      // del todo, aunque la conversión se alargue mucho. Si llegan datos
-      // reales de FFmpeg, ganan ellos (reportProgress nunca retrocede).
-      const simStart = Date.now();
-      const estimatedMs = Math.max(1000, duration * (fmt === "original" ? 80 : 900));
-      const progressTimer = setInterval(() => {
-        const elapsed = Date.now() - simStart;
-        const simulated = 0.97 * (1 - Math.exp(-elapsed / estimatedMs));
-        reportProgress(simulated);
-      }, 200);
+      const exportArgs = buildExportArgs(fmt, segment.start, duration, input, output, reaction);
+      console.log("[ClipFinder FFmpeg] iniciando exportación", {
+        clip: index, formato: fmt, inicio: segment.start, duracion: duration, timeoutMs: EXPORT_TIMEOUT_MS
+      });
+      addFfmpegLog(`Iniciando FFmpeg · clip ${index} · ${fmt} · límite ${EXPORT_TIMEOUT_MS / 1000}s`);
 
+      // Límite real. Si FFmpeg se queda bloqueado, destruimos el motor para
+      // evitar que la interfaz permanezca esperando indefinidamente.
       let code;
-      try{
-        const exportArgs = buildExportArgs(fmt, segment.start, duration, input, output, reaction);
-        console.log("[ClipFinder FFmpeg] iniciando exportación:", {
-          clip: index,
-          formato: fmt,
-          inicio: segment.start,
-          duracion: duration,
-          timeoutMs: EXPORT_TIMEOUT_MS
-        });
-        addFfmpegLog(`Iniciando FFmpeg · clip ${index} · ${fmt} · límite ${EXPORT_TIMEOUT_MS / 1000}s`);
-        code = await ffmpeg.exec(exportArgs, EXPORT_TIMEOUT_MS);
-        console.log("[ClipFinder FFmpeg] exec terminó con código:", code);
-      }finally{
-        clearInterval(progressTimer);
+      try {
+        const execPromise = ffmpeg.exec(exportArgs, EXPORT_TIMEOUT_MS);
+        // Evita una promesa rechazada sin consumidor si terminate() la provoca.
+        execPromise.catch(() => {});
+        code = await Promise.race([
+          execPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("FFmpeg ha tardado más de 2 minutos y se ha detenido para evitar un bloqueo.")), EXPORT_TIMEOUT_MS + 1000))
+        ]);
+      } catch (error) {
+        const timedOut = /más de 2 minutos|timeout|timed out/i.test(error?.message || "");
+        if (timedOut) {
+          addFfmpegLog("FFmpeg no respondió dentro del límite. Reiniciando el motor…");
+          try { ffmpeg?.terminate(); } catch (_) {}
+          ffmpeg = null;
+          ffmpegReady = false;
+          enginePromise = null;
+          inputPromise = null;
+          inputName = null;
+          throw new Error("FFmpeg se ha detenido porque llevaba más de 2 minutos. Pulsa Descargar de nuevo para reintentarlo.");
+        }
+        throw error;
       }
+      console.log("[ClipFinder FFmpeg] exec terminó con código:", code);
       if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
 
-      // El trabajo de FFmpeg ya terminó: ahora solo queda copiar el archivo
-      // desde la memoria del navegador y crear el enlace de descarga.
-      onProgress(0.98);
+      // FFmpeg ya terminó; ahora leemos el MP4 generado.
+      onProgress(0.99);
       const data = await ffmpeg.readFile(output);
       await ffmpeg.deleteFile(output);
       const url = URL.createObjectURL(new Blob([data], {type:"video/mp4"}));
