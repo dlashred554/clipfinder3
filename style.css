@@ -147,3 +147,26 @@ footer{border-top:1px solid var(--line);padding:24px 5vw;display:flex;justify-co
 .format-picker{grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 20px}
 .button.is-busy{pointer-events:none;opacity:.75}
 @media(max-width:720px){.format-picker{grid-template-columns:1fr}}
+
+.reaction-box{margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}
+.reaction-toggle{display:flex;align-items:flex-start;gap:12px;cursor:pointer}
+.reaction-toggle input{margin-top:4px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0}
+.reaction-toggle b{display:block;font-size:15px;font-weight:600}
+.reaction-toggle small{display:block;font:12px/1.5 Arial,sans-serif;color:var(--muted);margin-top:3px}
+.reaction-upload{display:flex;align-items:center;gap:10px;margin:14px 0 0 28px;flex-wrap:wrap}
+.reaction-filebtn{
+  position:relative;display:inline-flex;align-items:center;
+  border:1px solid var(--line);background:var(--paper2);
+  padding:11px 15px;font:13px Arial,sans-serif;color:var(--ink);
+  cursor:pointer;transition:.18s;max-width:100%;
+}
+.reaction-filebtn:hover{border-color:var(--accent)}
+.reaction-filebtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px}
+.reaction-filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.reaction-note{font:11px Arial,sans-serif;color:#9a958b;margin:10px 0 0 28px}
+@media(max-width:720px){
+  .reaction-upload{margin-left:0}
+  .reaction-note{margin-left:0}
+  .reaction-filebtn span{max-width:220px}
+}
+.length-option.is-disabled{opacity:.4;pointer-events:none}

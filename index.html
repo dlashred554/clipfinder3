@@ -67,6 +67,26 @@
         </label>
       </fieldset>
 
+      <div class="reaction-box" id="reactionBox">
+        <label class="reaction-toggle">
+          <input type="checkbox" id="reactionEnable">
+          <span>
+            <b>Añadir reacción encima (opcional)</b>
+            <small>Superpone una imagen o vídeo en la franja superior del clip. Debajo se mantiene el vídeo con fondo desenfocado, igual que en 9:16 / 16:9.</small>
+          </span>
+        </label>
+
+        <div class="reaction-upload hidden" id="reactionUpload">
+          <label class="reaction-filebtn" for="reactionInput">
+            <span id="reactionFileLabel">Elegir imagen o vídeo…</span>
+            <input id="reactionInput" type="file" accept="image/*,video/mp4,video/quicktime,video/webm">
+          </label>
+          <button type="button" id="reactionClear" class="button button-secondary hidden">Quitar</button>
+        </div>
+
+        <p class="reaction-note">Solo se aplica al descargar en formato 9:16 o 16:9 (no en “Original”, que no recodifica).</p>
+      </div>
+
       <div class="actions">
         <button id="generateBtn" class="button button-primary" disabled>
           Generar clips automáticamente
