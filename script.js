@@ -523,16 +523,18 @@ function renderClip(index, segment, fmt, onProgress){
       onProgress(0.01);
       currentJob.onProgress = reportProgress;
 
-      // Progreso simulado de respaldo: en "Original" (-c copy) FFmpeg casi
-      // nunca emite eventos de progreso reales, así que sin esto la barra
-      // se queda parada hasta que termina de golpe. Avanza solo poco a poco
-      // sin llegar al final; si llegan datos reales de FFmpeg, ganan ellos
-      // porque reportProgress nunca retrocede (Math.max con lastProgress).
+      // Progreso simulado de respaldo: FFmpeg (sobre todo en "Original",
+      // con -c copy) puede no emitir eventos de progreso reales, y la
+      // recodificación en el navegador a veces tarda más de lo previsto.
+      // Usamos una curva que se acerca al 97% sin tope fijo: nunca se para
+      // del todo, aunque la conversión se alargue mucho. Si llegan datos
+      // reales de FFmpeg, ganan ellos (reportProgress nunca retrocede).
       const simStart = Date.now();
-      const estimatedMs = Math.max(1200, duration * (fmt === "original" ? 60 : 350));
+      const estimatedMs = Math.max(1000, duration * (fmt === "original" ? 80 : 900));
       const progressTimer = setInterval(() => {
         const elapsed = Date.now() - simStart;
-        reportProgress(Math.min(0.9, elapsed / estimatedMs));
+        const simulated = 0.97 * (1 - Math.exp(-elapsed / estimatedMs));
+        reportProgress(simulated);
       }, 200);
 
       let code;
