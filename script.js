@@ -424,7 +424,6 @@ function buildExportArgs(fmt, start, duration, input, output, reaction){
       "-map", "0:a?",
       "-c", "copy",
       "-avoid_negative_ts", "make_zero",
-      "-movflags", "+faststart",
       "-y", output
     ];
   }
@@ -510,10 +509,22 @@ function renderClip(index, segment, fmt, onProgress){
     const duration = Math.max(1, segment.end - segment.start);
 
     currentJob = {kind:"export", duration, onProgress};
+    let progressTimer = null;
     try{
-      onProgress(0);
+      // FFmpeg.wasm no siempre emite eventos de progreso al usar -c copy.
+      // Mostramos avance visual desde el principio para que nunca parezca bloqueado en 0 %.
+      let visualProgress = 0.02;
+      onProgress(visualProgress);
+      progressTimer = setInterval(() => {
+        visualProgress = Math.min(0.94, visualProgress + (fmt === "original" ? 0.018 : 0.008));
+        onProgress(visualProgress);
+      }, 180);
+
       const code = await ffmpeg.exec(buildExportArgs(fmt, segment.start, duration, input, output, reaction));
       if(code !== 0) throw new Error(`FFmpeg terminó con código ${code}. Mira el registro de abajo.`);
+      if(progressTimer) clearInterval(progressTimer);
+      progressTimer = null;
+      onProgress(0.98);
       const data = await ffmpeg.readFile(output);
       await ffmpeg.deleteFile(output);
       const url = URL.createObjectURL(new Blob([data], {type:"video/mp4"}));
@@ -521,6 +532,7 @@ function renderClip(index, segment, fmt, onProgress){
       outputCache.set(key, url);
       return url;
     }finally{
+      if(progressTimer) clearInterval(progressTimer);
       currentJob = {kind:"none"};
     }
   });
